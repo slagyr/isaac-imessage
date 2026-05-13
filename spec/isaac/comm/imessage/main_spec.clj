@@ -1,6 +1,7 @@
 (ns isaac.comm.imessage.main-spec
   (:require
     [isaac.comm.imessage.main :as sut]
+    [isaac.comm.imessage.config]
     [speclj.core :refer :all]))
 
 (describe "iMessage main"
@@ -10,6 +11,7 @@
               :isaac-home "/tmp/isaac-home"
               :db-path "/tmp/chat.db"
               :state-path "/tmp/state.edn"
+              :config-path nil
               :service nil
               :interval-ms 1000}
              (sut/parse-args ["once"
@@ -22,6 +24,7 @@
               :isaac-home "/tmp/isaac-home"
               :db-path nil
               :state-path nil
+              :config-path nil
               :service nil
               :interval-ms 2500}
              (sut/parse-args ["loop"
@@ -33,39 +36,49 @@
               :isaac-home "/tmp/isaac-home"
               :db-path nil
               :state-path nil
+              :config-path nil
               :service "E:me"
               :interval-ms 1000}
              (sut/parse-args ["--isaac-home" "/tmp/isaac-home"
                               "--service" "E:me"])))
 
+  (it "parses an explicit config path"
+    (should= "/tmp/imessage.edn"
+             (:config-path (sut/parse-args ["--config-path" "/tmp/imessage.edn"]))))
+
   (it "defaults to once mode when no mode is given"
     (should= :once (:mode (sut/parse-args ["--isaac-home" "/tmp/isaac-home"]))))
 
   (it "runs one cycle through the poller"
-    (with-redefs [isaac.comm.imessage/drain-once-and-reply! (fn [isaac-home db-path state-path service]
-                                                              (should= ["/tmp/isaac-home" "/tmp/chat.db" "/tmp/state.edn" "E:me"]
-                                                                       [isaac-home db-path state-path service])
-                                                              {:ok true})
+    (with-redefs [isaac.comm.imessage.config/load-config (fn [_] {:service "E:file" :interval-ms 2500})
+                  isaac.comm.imessage.config/default-config-path (fn [_] "/tmp/imessage.edn")
+                  isaac.comm.imessage/drain-once-and-reply! (fn [isaac-home db-path state-path service]
+                                                               (should= ["/tmp/isaac-home" "/tmp/chat.db" "/tmp/state.edn" "E:me"]
+                                                                        [isaac-home db-path state-path service])
+                                                               {:ok true})
                   isaac.comm.imessage.poller/run-once! (fn [opts]
-                                                         (should= "/tmp/isaac-home" (:isaac-home opts))
-                                                         (should= "/tmp/chat.db" (:db-path opts))
-                                                         (should= "/tmp/state.edn" (:state-path opts))
-                                                         (should= 1000 (:interval-ms opts))
-                                                         (should= {:ok true} ((:drain-fn opts) "/tmp/isaac-home" "/tmp/chat.db" "/tmp/state.edn"))
-                                                         {:ok true})]
+                                                          (should= "/tmp/isaac-home" (:isaac-home opts))
+                                                          (should= "/tmp/chat.db" (:db-path opts))
+                                                          (should= "/tmp/state.edn" (:state-path opts))
+                                                          (should= 1000 (:interval-ms opts))
+                                                          (should= {:ok true} ((:drain-fn opts) "/tmp/isaac-home" "/tmp/chat.db" "/tmp/state.edn"))
+                                                          {:ok true})]
       (should= {:ok true}
                 (sut/run-poller! {:mode :once
                                   :isaac-home "/tmp/isaac-home"
                                   :db-path "/tmp/chat.db"
                                   :state-path "/tmp/state.edn"
+                                  :config-path nil
                                   :service "E:me"
                                   :interval-ms 1000}))))
 
   (it "starts the loop through the poller"
-    (with-redefs [isaac.comm.imessage/drain-once-and-reply! (fn [isaac-home db-path state-path service]
-                                                              (should= ["/tmp/isaac-home" "/tmp/chat.db" "/tmp/state.edn" "E:me"]
-                                                                       [isaac-home db-path state-path service])
-                                                              {:ok true})
+    (with-redefs [isaac.comm.imessage.config/load-config (fn [_] {:service "E:file" :interval-ms 2500})
+                  isaac.comm.imessage.config/default-config-path (fn [_] "/tmp/imessage.edn")
+                  isaac.comm.imessage/drain-once-and-reply! (fn [isaac-home db-path state-path service]
+                                                               (should= ["/tmp/isaac-home" "/tmp/chat.db" "/tmp/state.edn" "E:me"]
+                                                                        [isaac-home db-path state-path service])
+                                                               {:ok true})
                   isaac.comm.imessage.poller/start! (fn [opts]
                                                       (should= "/tmp/isaac-home" (:isaac-home opts))
                                                       (should= "/tmp/chat.db" (:db-path opts))
@@ -78,5 +91,22 @@
                           :isaac-home "/tmp/isaac-home"
                           :db-path "/tmp/chat.db"
                           :state-path "/tmp/state.edn"
+                          :config-path nil
                           :service "E:me"
                           :interval-ms 2500})))))
+
+  (it "uses config file defaults when CLI values are omitted"
+    (with-redefs [isaac.comm.imessage.config/default-config-path (fn [_] "/tmp/imessage.edn")
+                  isaac.comm.imessage.config/load-config (fn [_] {:service "E:file" :interval-ms 2500})
+                  isaac.comm.imessage.poller/run-once! (fn [opts]
+                                                         (should= "E:file" (:service opts))
+                                                         (should= 2500 (:interval-ms opts))
+                                                         {:ok true})]
+       (should= {:ok true}
+                (sut/run-poller! {:mode :once
+                                  :isaac-home "/tmp/isaac-home"
+                                  :db-path "/tmp/chat.db"
+                                  :state-path "/tmp/state.edn"
+                                  :config-path nil
+                                  :service nil
+                                  :interval-ms nil}))))
