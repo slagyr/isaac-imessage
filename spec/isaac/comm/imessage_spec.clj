@@ -218,6 +218,18 @@
                                {:message {:content "hello back"}}
                                "E:me")))
 
+  (it "does not chunk short reply text"
+    (should= ["hello back"]
+             (sut/chunk-reply-text "hello back" 20)))
+
+  (it "chunks long reply text on whitespace boundaries when possible"
+    (should= ["one two" "three" "four five"]
+             (sut/chunk-reply-text "one two three four five" 10)))
+
+  (it "hard-splits a long token when no whitespace boundary fits"
+    (should= ["abcdefghij" "klm"]
+             (sut/chunk-reply-text "abcdefghijklm" 10)))
+
   (it "dispatches a work item and sends the formatted reply"
     (let [calls (atom [])
           item  {:session-key "imessage:chat-1"
@@ -230,12 +242,36 @@
                                               (swap! calls conj [:send record])
                                               {:ok true})]
         (should= {:dispatch-result {:message {:content "hello back"}}
-                  :delivery-result {:ok true}}
+                  :delivery-results [{:ok true}]}
                  (sut/dispatch-and-reply-work-item! "/tmp/isaac-home" item "E:me"))
         (should= [[:dispatch "/tmp/isaac-home" item]
                   [:send {:content "hello back"
                           :service "E:me"
                           :target "+15551234567"}]]
+                 @calls))))
+
+  (it "dispatches a work item and sends multiple reply chunks when needed"
+    (let [calls (atom [])
+          item  {:session-key "imessage:chat-1"
+                 :input "hello"
+                 :origin {:kind :imessage :handle "+15551234567"}}]
+      (with-redefs [sut/dispatch-work-item! (fn [_state-dir _work-item]
+                                              {:message {:content "one two three four five"}})
+                    sut/send!               (fn [record]
+                                              (swap! calls conj record)
+                                              {:ok true})]
+        (should= {:dispatch-result {:message {:content "one two three four five"}}
+                  :delivery-results [{:ok true} {:ok true} {:ok true}]}
+                 (sut/dispatch-and-reply-work-item! "/tmp/isaac-home" item "E:me" 10))
+        (should= [{:content "one two"
+                   :service "E:me"
+                   :target "+15551234567"}
+                  {:content "three"
+                   :service "E:me"
+                   :target "+15551234567"}
+                  {:content "four five"
+                   :service "E:me"
+                   :target "+15551234567"}]
                  @calls))))
 
   (it "drains, dispatches, and replies for a full cycle"
@@ -252,13 +288,13 @@
                                                         (should= item work-item)
                                                         (should= "E:me" service)
                                                         {:dispatch-result {:message {:content "hello back"}}
-                                                         :delivery-result {:ok true}})]
+                                                         :delivery-results [{:ok true}]})]
         (should= {:db-path "/tmp/chat.db"
                   :state-path "/tmp/state.edn"
                   :state {:watermark {:message-rowid 42}}
                   :work-items [item]
                   :results [{:dispatch-result {:message {:content "hello back"}}
-                             :delivery-result {:ok true}}]}
+                             :delivery-results [{:ok true}]}]}
                  (sut/drain-once-and-reply! "/tmp/isaac-home" "/tmp/chat.db" "/tmp/state.edn" "E:me")))))
 
   (it "drains one polling cycle from chat db into dispatched Isaac turns"

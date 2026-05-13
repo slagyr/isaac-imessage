@@ -1,5 +1,6 @@
 (ns isaac.comm.imessage
   (:require
+    [clojure.string :as str]
     [isaac.api :as api]
     [isaac.comm :as comm]
     [isaac.comm.imessage.apple-script :as apple-script]
@@ -113,16 +114,44 @@
         (if (keyword? error) (name error) (str error)))
       ""))
 
+(defn chunk-reply-text
+  ([text] (chunk-reply-text text 2000))
+  ([text max-chars]
+   (let [text (or text "")]
+     (loop [remaining (str/trim text)
+            chunks    []]
+       (cond
+         (empty? remaining)
+         (if (seq chunks) chunks [""])
+
+         (<= (count remaining) max-chars)
+         (conj chunks remaining)
+
+         :else
+         (let [candidate (subs remaining 0 max-chars)
+               split-at  (or (some->> (re-find #"(?s)^.*\s" candidate) count)
+                             max-chars)
+               chunk     (str/trim (subs remaining 0 split-at))
+               next-text (str/trim (subs remaining split-at))]
+           (recur next-text (conj chunks chunk))))))))
+
 (defn reply-record [work-item result service]
   {:content (result->reply-text result)
    :service service
    :target  (get-in work-item [:origin :handle])})
 
-(defn dispatch-and-reply-work-item! [state-dir work-item service]
-  (let [dispatch-result (dispatch-work-item! state-dir work-item)
-        delivery-result (send! (reply-record work-item dispatch-result service))]
-    {:dispatch-result dispatch-result
-     :delivery-result delivery-result}))
+(defn dispatch-and-reply-work-item!
+  ([state-dir work-item service]
+   (dispatch-and-reply-work-item! state-dir work-item service 2000))
+  ([state-dir work-item service max-chars]
+   (let [dispatch-result   (dispatch-work-item! state-dir work-item)
+         reply-text        (result->reply-text dispatch-result)
+         delivery-results  (mapv #(send! {:content %
+                                          :service service
+                                          :target  (get-in work-item [:origin :handle])})
+                                 (chunk-reply-text reply-text max-chars))]
+     {:dispatch-result dispatch-result
+      :delivery-results delivery-results})))
 
 (defn drain-once!
   ([isaac-home db-path state-path]
