@@ -15,3 +15,11 @@ Initial scaffold:
 - `src/isaac/comm/imessage/routing.clj`
 - `src/isaac/comm/imessage/state.clj`
 - `spec/isaac/comm/imessage_spec.clj`
+
+## License
+
+MIT
+
+Copyright (c) 2026 Micah Martin
+
+See [`LICENSE`](LICENSE).
