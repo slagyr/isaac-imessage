@@ -103,6 +103,27 @@
 (defn dispatch-work-items! [state-dir work-items]
   (mapv #(dispatch-work-item! state-dir %) work-items))
 
+(defn result->reply-text [result]
+  (or (get-in result [:message :content])
+      (:content result)
+      (:message result)
+      (:message (:error result))
+      (:message result)
+      (when-let [error (:error result)]
+        (if (keyword? error) (name error) (str error)))
+      ""))
+
+(defn reply-record [work-item result service]
+  {:content (result->reply-text result)
+   :service service
+   :target  (get-in work-item [:origin :handle])})
+
+(defn dispatch-and-reply-work-item! [state-dir work-item service]
+  (let [dispatch-result (dispatch-work-item! state-dir work-item)
+        delivery-result (send! (reply-record work-item dispatch-result service))]
+    {:dispatch-result dispatch-result
+     :delivery-result delivery-result}))
+
 (defn drain-once!
   ([isaac-home db-path state-path]
    (let [{:keys [work-items state] :as polled} (poll-work-items-from-db! db-path state-path)
@@ -112,6 +133,17 @@
    (drain-once! isaac-home
                 (default-chat-db-path)
                 (default-state-path))))
+
+(defn drain-once-and-reply!
+  ([isaac-home db-path state-path service]
+   (let [{:keys [work-items state] :as polled} (poll-work-items-from-db! db-path state-path)
+         results (mapv #(dispatch-and-reply-work-item! isaac-home % service) work-items)]
+     (assoc polled :results results :state state)))
+  ([isaac-home service]
+   (drain-once-and-reply! isaac-home
+                          (default-chat-db-path)
+                          (default-state-path)
+                          service)))
 
 (deftype ImessageComm [host state*]
   comm/Comm

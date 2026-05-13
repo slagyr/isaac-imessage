@@ -197,6 +197,70 @@
                   ["/tmp/isaac-home" "imessage:chat-2"]]
                  @calls))))
 
+  (it "formats a successful assistant message result as reply text"
+    (should= "hello back"
+             (sut/result->reply-text {:message {:content "hello back"}})))
+
+  (it "formats a bridge command result as reply text"
+    (should= "effort set to 5"
+             (sut/result->reply-text {:message "effort set to 5"})))
+
+  (it "formats an error result as reply text"
+    (should= "boom"
+             (sut/result->reply-text {:error :exception :message "boom"})))
+
+  (it "builds an outbound reply record from a work item and result"
+    (should= {:content "hello back"
+              :service "E:me"
+              :target "+15551234567"}
+             (sut/reply-record {:session-key "imessage:chat-1"
+                                :origin {:kind :imessage :handle "+15551234567"}}
+                               {:message {:content "hello back"}}
+                               "E:me")))
+
+  (it "dispatches a work item and sends the formatted reply"
+    (let [calls (atom [])
+          item  {:session-key "imessage:chat-1"
+                 :input "hello"
+                 :origin {:kind :imessage :handle "+15551234567"}}]
+      (with-redefs [sut/dispatch-work-item! (fn [state-dir work-item]
+                                              (swap! calls conj [:dispatch state-dir work-item])
+                                              {:message {:content "hello back"}})
+                    sut/send!               (fn [record]
+                                              (swap! calls conj [:send record])
+                                              {:ok true})]
+        (should= {:dispatch-result {:message {:content "hello back"}}
+                  :delivery-result {:ok true}}
+                 (sut/dispatch-and-reply-work-item! "/tmp/isaac-home" item "E:me"))
+        (should= [[:dispatch "/tmp/isaac-home" item]
+                  [:send {:content "hello back"
+                          :service "E:me"
+                          :target "+15551234567"}]]
+                 @calls))))
+
+  (it "drains, dispatches, and replies for a full cycle"
+    (let [item {:session-key "imessage:chat-1"
+                :input "hello"
+                :origin {:kind :imessage :handle "+15551234567"}}]
+      (with-redefs [sut/poll-work-items-from-db! (fn [db-path state-path]
+                                                   {:db-path db-path
+                                                    :state-path state-path
+                                                    :state {:watermark {:message-rowid 42}}
+                                                    :work-items [item]})
+                    sut/dispatch-and-reply-work-item! (fn [state-dir work-item service]
+                                                        (should= "/tmp/isaac-home" state-dir)
+                                                        (should= item work-item)
+                                                        (should= "E:me" service)
+                                                        {:dispatch-result {:message {:content "hello back"}}
+                                                         :delivery-result {:ok true}})]
+        (should= {:db-path "/tmp/chat.db"
+                  :state-path "/tmp/state.edn"
+                  :state {:watermark {:message-rowid 42}}
+                  :work-items [item]
+                  :results [{:dispatch-result {:message {:content "hello back"}}
+                             :delivery-result {:ok true}}]}
+                 (sut/drain-once-and-reply! "/tmp/isaac-home" "/tmp/chat.db" "/tmp/state.edn" "E:me")))))
+
   (it "drains one polling cycle from chat db into dispatched Isaac turns"
     (with-redefs [sut/poll-work-items-from-db! (fn [db-path state-path]
                                                  {:db-path db-path
