@@ -1,10 +1,13 @@
 {:paths ["src" "resources"]
 
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}
-        isaac/isaac         {:local/root "../isaac/isaac-worker-2"}}
+        io.github.slagyr/isaac {:git/url "https://github.com/slagyr/isaac.git"
+                                :git/sha "c8fb6ca3b12e17fa0fc1cd19f5c02cc8a867549d"}}
 
  :aliases
- {:test {:extra-paths ["spec"]
+ {:dev-local {:override-deps {io.github.slagyr/isaac {:local/root "../isaac/isaac-worker-2"}}}
+
+  :test {:extra-paths ["spec"]
          :extra-deps  {speclj/speclj {:mvn/version "3.13.0"}}}
 
   :spec {:extra-paths ["spec"]

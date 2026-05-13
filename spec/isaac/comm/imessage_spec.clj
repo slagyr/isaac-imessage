@@ -2,6 +2,7 @@
   (:require
     [isaac.comm.imessage :as sut]
     [isaac.comm.imessage.apple-script]
+    [isaac.comm.imessage.chat-db]
     [isaac.comm.imessage.inbox]
     [isaac.comm.imessage.state]
     [speclj.core :refer :all]))
@@ -13,6 +14,7 @@
 
   (it "exposes the child namespaces"
     (should-not-be-nil (find-ns 'isaac.comm.imessage.apple-script))
+    (should-not-be-nil (find-ns 'isaac.comm.imessage.chat-db))
     (should-not-be-nil (find-ns 'isaac.comm.imessage.inbox))
     (should-not-be-nil (find-ns 'isaac.comm.imessage.state)))
 

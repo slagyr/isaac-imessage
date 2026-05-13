@@ -1,3 +1,3 @@
 {:tasks
  {spec {:doc  "Run Speclj specs"
-        :task (shell "clojure" "-M:spec")}}}
+        :task (shell "clj" "-M:spec")}}}
