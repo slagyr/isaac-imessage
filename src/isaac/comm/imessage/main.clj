@@ -32,6 +32,8 @@
         cfg-path    (or config-path (config/default-config-path home))
         merged      (config/merge-config (config/load-config cfg-path)
                                          {:service service :interval-ms interval-ms})
+        db-path     (or db-path (imessage/default-chat-db-path))
+        state-path  (or state-path (imessage/default-state-path))
         poller-opts {:isaac-home home
                      :db-path db-path
                      :state-path state-path

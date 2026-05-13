@@ -110,3 +110,29 @@
                                   :config-path nil
                                   :service nil
                                   :interval-ms nil}))))
+
+  (it "uses default db and state paths when they are omitted"
+    (with-redefs [isaac.comm.imessage.config/default-config-path (fn [_] "/tmp/imessage.edn")
+                  isaac.comm.imessage.config/load-config (fn [_] {:service "E:file" :interval-ms 2500})
+                  isaac.comm.imessage/default-chat-db-path (fn [] "/Users/micah/Library/Messages/chat.db")
+                  isaac.comm.imessage/default-state-path (fn [] "/Users/micah/.isaac/imessage/state.edn")
+                  isaac.comm.imessage/drain-once-and-reply! (fn [isaac-home db-path state-path service]
+                                                              (should= ["/tmp/isaac-home"
+                                                                         "/Users/micah/Library/Messages/chat.db"
+                                                                         "/Users/micah/.isaac/imessage/state.edn"
+                                                                         "E:file"]
+                                                                       [isaac-home db-path state-path service])
+                                                              {:ok true})
+                  isaac.comm.imessage.poller/run-once! (fn [opts]
+                                                         (should= "/Users/micah/Library/Messages/chat.db" (:db-path opts))
+                                                         (should= "/Users/micah/.isaac/imessage/state.edn" (:state-path opts))
+                                                         (should= {:ok true} ((:drain-fn opts) "/tmp/isaac-home" (:db-path opts) (:state-path opts)))
+                                                         {:ok true})]
+      (should= {:ok true}
+               (sut/run-poller! {:mode :once
+                                 :isaac-home "/tmp/isaac-home"
+                                 :db-path nil
+                                 :state-path nil
+                                 :config-path nil
+                                 :service nil
+                                 :interval-ms nil}))))
