@@ -69,13 +69,50 @@
   (it "does not replay already-watermarked messages on a second poll"
     (let [path   (temp-path "isaac-imessage-watermark-state")
           source (reify isaac.comm.imessage.inbox/MessageSource
-                   (-messages-since [_ watermark]
+                    (-messages-since [_ watermark]
                      (let [all [{:message-rowid 42
                                  :thread-id      "chat-guid-1"
                                  :handle         "+15551234567"
                                  :from-me?       false
                                  :text           "hello"}]
                            cutoff (get watermark :message-rowid 0)]
-                       (filter #(> (:message-rowid %) cutoff) all))))]
+                        (filter #(> (:message-rowid %) cutoff) all))))]
       (should= 1 (count (:messages (sut/poll-routed! source path))))
-      (should= [] (:messages (sut/poll-routed! source path))))))
+      (should= [] (:messages (sut/poll-routed! source path)))))
+
+  (it "builds dispatch-ready work items from routed messages"
+    (let [path   (temp-path "isaac-imessage-work-items")
+          source (reify isaac.comm.imessage.inbox/MessageSource
+                   (-messages-since [_ _]
+                     [{:message-rowid 42
+                       :thread-id      "chat-guid-1"
+                       :handle         "+15551234567"
+                       :from-me?       false
+                       :text           "hello"
+                       :sent-at        1234567890}]))
+          result (sut/poll-work-items! source path)]
+      (should= [{:session-key "imessage:chat-guid-1"
+                 :input       "hello"
+                 :origin      {:kind          :imessage
+                               :thread-id     "chat-guid-1"
+                               :handle        "+15551234567"
+                               :message-rowid 42
+                               :sent-at       1234567890}}]
+               (:work-items result))
+      (should= {:message-rowid 42}
+               (get-in result [:state :watermark]))))
+
+  (it "returns no work items when a second poll sees nothing new"
+    (let [path   (temp-path "isaac-imessage-work-items-watermark")
+          source (reify isaac.comm.imessage.inbox/MessageSource
+                   (-messages-since [_ watermark]
+                     (let [all [{:message-rowid 42
+                                 :thread-id      "chat-guid-1"
+                                 :handle         "+15551234567"
+                                 :from-me?       false
+                                 :text           "hello"
+                                 :sent-at        1234567890}]
+                           cutoff (get watermark :message-rowid 0)]
+                       (filter #(> (:message-rowid %) cutoff) all))))]
+      (should= 1 (count (:work-items (sut/poll-work-items! source path))))
+      (should= [] (:work-items (sut/poll-work-items! source path))))))

@@ -47,6 +47,20 @@
     (write-state! path (:state routed))
     routed))
 
+(defn- ->work-item [message]
+  {:session-key (:session-key message)
+   :input       (:text message)
+   :origin      {:kind          :imessage
+                 :thread-id     (:thread-id message)
+                 :handle        (:handle message)
+                 :message-rowid (:message-rowid message)
+                 :sent-at       (:sent-at message)}})
+
+(defn poll-work-items! [source path]
+  (let [routed (poll-routed! source path)]
+    {:work-items (mapv ->work-item (:messages routed))
+     :state      (:state routed)}))
+
 (deftype ImessageComm [host state*]
   comm/Comm
   (on-turn-start [_ _ _] nil)
