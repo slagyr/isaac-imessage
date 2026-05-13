@@ -2,10 +2,21 @@
   (:require
     [isaac.comm :as comm]
     [isaac.comm.imessage.apple-script :as apple-script]
+    [isaac.comm.imessage.chat-db :as chat-db]
     [isaac.comm.imessage.inbox :as inbox]
     [isaac.comm.imessage.routing :as routing]
     [isaac.comm.imessage.state :as state]
     [isaac.configurator :as configurator]))
+
+(defn default-chat-db-path
+  ([] (default-chat-db-path (System/getProperty "user.home")))
+  ([home]
+   (str home "/Library/Messages/chat.db")))
+
+(defn default-state-path
+  ([] (default-state-path (System/getProperty "user.home")))
+  ([home]
+   (str home "/.isaac/imessage/state.edn")))
 
 (defn- default-target [host slice record]
   (or (:target record)
@@ -60,6 +71,16 @@
   (let [routed (poll-routed! source path)]
     {:work-items (mapv ->work-item (:messages routed))
      :state      (:state routed)}))
+
+(defn poll-work-items-from-db!
+  ([db-path state-path]
+   (let [store  (chat-db/shell-store db-path)
+         source (chat-db/message-source store)
+         result (poll-work-items! source state-path)]
+     (assoc result :db-path db-path :state-path state-path)))
+  ([]
+   (poll-work-items-from-db! (default-chat-db-path)
+                             (default-state-path))))
 
 (deftype ImessageComm [host state*]
   comm/Comm
