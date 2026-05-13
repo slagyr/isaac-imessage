@@ -3,6 +3,7 @@
     [isaac.comm :as comm]
     [isaac.comm.imessage.apple-script :as apple-script]
     [isaac.comm.imessage.inbox :as inbox]
+    [isaac.comm.imessage.routing :as routing]
     [isaac.comm.imessage.state :as state]
     [isaac.configurator :as configurator]))
 
@@ -33,6 +34,18 @@
         result  (inbox/poll! source current)]
     (write-state! path (:state result))
     result))
+
+(defn poll-routed! [source path]
+  (let [current (read-state path)
+        polled  (inbox/poll! source current)
+        routed  (reduce (fn [{:keys [state messages]} message]
+                          (let [{:keys [session-key state]} (routing/ensure-session state (:thread-id message) (:handle message))]
+                            {:state    state
+                             :messages (conj messages (assoc message :session-key session-key))}))
+                        {:state (:state polled) :messages []}
+                        (:messages polled))]
+    (write-state! path (:state routed))
+    routed))
 
 (deftype ImessageComm [host state*]
   comm/Comm

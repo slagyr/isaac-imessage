@@ -4,4 +4,5 @@
 .lsp/
 .idea/
 .nrepl-port
+.toolbox/
 target/
