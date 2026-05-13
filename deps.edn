@@ -2,7 +2,7 @@
 
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}
         io.github.slagyr/isaac {:git/url "https://github.com/slagyr/isaac.git"
-                                :git/sha "c8fb6ca3b12e17fa0fc1cd19f5c02cc8a867549d"}}
+                                :git/sha "3f2364fb4940412f29b8abc5577ce74d5c20776a"}}
 
  :aliases
  {:dev-local {:override-deps {io.github.slagyr/isaac {:local/root "../isaac/isaac-worker-2"}}}

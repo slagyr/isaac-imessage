@@ -1,5 +1,6 @@
 (ns isaac.comm.imessage
   (:require
+    [isaac.api :as api]
     [isaac.comm :as comm]
     [isaac.comm.imessage.apple-script :as apple-script]
     [isaac.comm.imessage.chat-db :as chat-db]
@@ -81,6 +82,36 @@
   ([]
    (poll-work-items-from-db! (default-chat-db-path)
                              (default-state-path))))
+
+(defn dispatch-request [work-item]
+  {:session-key (:session-key work-item)
+   :input       (:input work-item)
+   :origin      (:origin work-item)})
+
+(defn- ensure-session! [state-dir work-item]
+  (or (api/get-session state-dir (:session-key work-item))
+      (api/create-session! state-dir
+                           (:session-key work-item)
+                           {:origin   (:origin work-item)
+                            :chatType "direct"
+                            :channel  "imessage"})))
+
+(defn dispatch-work-item! [state-dir work-item]
+  (ensure-session! state-dir work-item)
+  (api/dispatch! state-dir (dispatch-request work-item)))
+
+(defn dispatch-work-items! [state-dir work-items]
+  (mapv #(dispatch-work-item! state-dir %) work-items))
+
+(defn drain-once!
+  ([isaac-home db-path state-path]
+   (let [{:keys [work-items state] :as polled} (poll-work-items-from-db! db-path state-path)
+         results (dispatch-work-items! isaac-home work-items)]
+     (assoc polled :results results :state state)))
+  ([isaac-home]
+   (drain-once! isaac-home
+                (default-chat-db-path)
+                (default-state-path))))
 
 (deftype ImessageComm [host state*]
   comm/Comm

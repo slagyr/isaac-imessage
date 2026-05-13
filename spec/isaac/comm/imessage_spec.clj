@@ -1,9 +1,12 @@
 (ns isaac.comm.imessage-spec
   (:require
+    [isaac.api]
     [isaac.comm.imessage :as sut]
     [isaac.comm.imessage.apple-script]
     [isaac.comm.imessage.chat-db]
     [isaac.comm.imessage.inbox]
+    [isaac.comm.imessage.main]
+    [isaac.comm.imessage.poller]
     [isaac.comm.imessage.routing]
     [isaac.comm.imessage.state]
     [speclj.core :refer :all]))
@@ -20,6 +23,8 @@
     (should-not-be-nil (find-ns 'isaac.comm.imessage.apple-script))
     (should-not-be-nil (find-ns 'isaac.comm.imessage.chat-db))
     (should-not-be-nil (find-ns 'isaac.comm.imessage.inbox))
+    (should-not-be-nil (find-ns 'isaac.comm.imessage.main))
+    (should-not-be-nil (find-ns 'isaac.comm.imessage.poller))
     (should-not-be-nil (find-ns 'isaac.comm.imessage.routing))
     (should-not-be-nil (find-ns 'isaac.comm.imessage.state)))
 
@@ -113,6 +118,124 @@
                                  :text           "hello"
                                  :sent-at        1234567890}]
                            cutoff (get watermark :message-rowid 0)]
-                       (filter #(> (:message-rowid %) cutoff) all))))]
+                        (filter #(> (:message-rowid %) cutoff) all))))]
       (should= 1 (count (:work-items (sut/poll-work-items! source path))))
-      (should= [] (:work-items (sut/poll-work-items! source path))))))
+      (should= [] (:work-items (sut/poll-work-items! source path)))))
+
+  (it "builds an Isaac dispatch request from a work item"
+    (should= {:session-key "imessage:chat-guid-1"
+              :input       "hello"
+              :origin      {:kind          :imessage
+                            :thread-id     "chat-guid-1"
+                            :handle        "+15551234567"
+                            :message-rowid 42
+                            :sent-at       1234567890}}
+             (sut/dispatch-request {:session-key "imessage:chat-guid-1"
+                                    :input       "hello"
+                                    :origin      {:kind          :imessage
+                                                  :thread-id     "chat-guid-1"
+                                                  :handle        "+15551234567"
+                                                  :message-rowid 42
+                                                  :sent-at       1234567890}})))
+
+  (it "creates a session before dispatch when one does not exist"
+    (let [calls (atom [])
+          work-item {:session-key "imessage:chat-guid-1"
+                     :input       "hello"
+                     :origin      {:kind :imessage :thread-id "chat-guid-1" :handle "+15551234567"}}]
+      (with-redefs [isaac.api/get-session (fn [_state-dir _session-key] nil)
+                    isaac.api/create-session! (fn [state-dir session-key opts]
+                                                (swap! calls conj [:create state-dir session-key opts])
+                                                {:id session-key})
+                    isaac.api/dispatch! (fn [state-dir request]
+                                          (swap! calls conj [:dispatch state-dir request])
+                                          {:ok true})]
+        (should= {:ok true}
+                 (sut/dispatch-work-item! "/tmp/isaac-home" work-item))
+        (should= [[:create "/tmp/isaac-home"
+                   "imessage:chat-guid-1"
+                   {:origin {:kind :imessage :thread-id "chat-guid-1" :handle "+15551234567"}
+                    :chatType "direct"
+                    :channel "imessage"}]
+                  [:dispatch "/tmp/isaac-home"
+                   {:session-key "imessage:chat-guid-1"
+                    :input "hello"
+                    :origin {:kind :imessage :thread-id "chat-guid-1" :handle "+15551234567"}}]]
+                 @calls))))
+
+  (it "dispatches without creating a session when one already exists"
+    (let [calls (atom [])
+          work-item {:session-key "imessage:chat-guid-1"
+                     :input       "hello"
+                     :origin      {:kind :imessage :thread-id "chat-guid-1" :handle "+15551234567"}}]
+      (with-redefs [isaac.api/get-session (fn [_state-dir _session-key] {:id "imessage:chat-guid-1"})
+                    isaac.api/create-session! (fn [& _]
+                                                (swap! calls conj :create)
+                                                nil)
+                    isaac.api/dispatch! (fn [state-dir request]
+                                          (swap! calls conj [:dispatch state-dir request])
+                                          {:ok true})]
+        (should= {:ok true}
+                 (sut/dispatch-work-item! "/tmp/isaac-home" work-item))
+        (should= [[:dispatch "/tmp/isaac-home"
+                   {:session-key "imessage:chat-guid-1"
+                    :input "hello"
+                    :origin {:kind :imessage :thread-id "chat-guid-1" :handle "+15551234567"}}]]
+                 @calls))))
+
+  (it "dispatches a batch of work items in order"
+    (let [calls (atom [])
+          items [{:session-key "imessage:chat-1" :input "hello" :origin {:kind :imessage}}
+                 {:session-key "imessage:chat-2" :input "there" :origin {:kind :imessage}}]]
+      (with-redefs [sut/dispatch-work-item! (fn [state-dir item]
+                                              (swap! calls conj [state-dir (:session-key item)])
+                                              {:session-key (:session-key item) :ok true})]
+        (should= [{:session-key "imessage:chat-1" :ok true}
+                  {:session-key "imessage:chat-2" :ok true}]
+                 (sut/dispatch-work-items! "/tmp/isaac-home" items))
+        (should= [["/tmp/isaac-home" "imessage:chat-1"]
+                  ["/tmp/isaac-home" "imessage:chat-2"]]
+                 @calls))))
+
+  (it "drains one polling cycle from chat db into dispatched Isaac turns"
+    (with-redefs [sut/poll-work-items-from-db! (fn [db-path state-path]
+                                                 {:db-path db-path
+                                                  :state-path state-path
+                                                  :work-items [{:session-key "imessage:chat-1"
+                                                                :input "hello"
+                                                                :origin {:kind :imessage}}]
+                                                  :state {:watermark {:message-rowid 42}}})
+                  sut/dispatch-work-items! (fn [state-dir items]
+                                             (should= "/tmp/isaac-home" state-dir)
+                                             (should= [{:session-key "imessage:chat-1"
+                                                        :input "hello"
+                                                        :origin {:kind :imessage}}]
+                                                      items)
+                                             [{:session-key "imessage:chat-1" :ok true}])]
+      (should= {:db-path "/tmp/chat.db"
+                :state-path "/tmp/state.edn"
+                :state {:watermark {:message-rowid 42}}
+                :work-items [{:session-key "imessage:chat-1"
+                              :input "hello"
+                              :origin {:kind :imessage}}]
+                :results [{:session-key "imessage:chat-1" :ok true}]}
+               (sut/drain-once! "/tmp/isaac-home" "/tmp/chat.db" "/tmp/state.edn"))))
+
+  (it "drains one cycle with default db and state paths"
+    (with-redefs [sut/default-chat-db-path (fn [] "/Users/micah/Library/Messages/chat.db")
+                  sut/default-state-path   (fn [] "/Users/micah/.isaac/imessage/state.edn")
+                  sut/poll-work-items-from-db! (fn [db-path state-path]
+                                                 {:db-path db-path
+                                                  :state-path state-path
+                                                  :work-items []
+                                                  :state {:watermark nil}})
+                  sut/dispatch-work-items! (fn [state-dir items]
+                                             (should= "/tmp/isaac-home" state-dir)
+                                             (should= [] items)
+                                             [])]
+      (should= {:db-path "/Users/micah/Library/Messages/chat.db"
+                :state-path "/Users/micah/.isaac/imessage/state.edn"
+                :state {:watermark nil}
+                :work-items []
+                :results []}
+               (sut/drain-once! "/tmp/isaac-home")))))
