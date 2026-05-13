@@ -1,0 +1,7 @@
+{:id       :isaac.comm.imessage
+ :version  "0.1.0"
+ :requires []
+ :extends  {:comm {:imessage {:isaac/factory isaac.comm.imessage/make
+                              :service        {:type :string}
+                              :default-target {:type :string}
+                              :poll-interval-ms {:type :int}}}}}
