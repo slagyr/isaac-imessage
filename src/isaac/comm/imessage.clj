@@ -140,6 +140,13 @@
    :service service
    :target  (get-in work-item [:origin :handle])})
 
+(defn preview-reply-records [work-item result service]
+  (mapv (fn [content]
+          {:content content
+           :service service
+           :target  (get-in work-item [:origin :handle])})
+        (chunk-reply-text (result->reply-text result))))
+
 (defn dispatch-and-reply-work-item!
   ([state-dir work-item service]
    (dispatch-and-reply-work-item! state-dir work-item service 2000))
@@ -173,6 +180,14 @@
                           (default-chat-db-path)
                           (default-state-path)
                           service)))
+
+(defn inspect-work-items-from-db! [db-path state-path service]
+  (let [{:keys [work-items] :as result} (poll-work-items-from-db! db-path state-path)]
+    (assoc result :reply-preview
+                  (mapv (fn [item]
+                          {:session-key (:session-key item)
+                           :records     (preview-reply-records item {:message {:content (:input item)}} service)})
+                        work-items))))
 
 (deftype ImessageComm [host state*]
   comm/Comm

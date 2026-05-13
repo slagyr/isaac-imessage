@@ -10,7 +10,7 @@
 
 (defn parse-args [args]
   (let [[first-arg & rest-args] args
-        [mode remaining] (if (contains? #{"once" "loop"} first-arg)
+        [mode remaining] (if (contains? #{"once" "loop" "inspect"} first-arg)
                            [(keyword first-arg) rest-args]
                            [:once args])]
     (loop [opts {:mode :once :isaac-home nil :db-path nil :state-path nil :config-path nil :service nil :interval-ms 1000}
@@ -42,6 +42,7 @@
                      :drain-fn (fn [home db-path state-path]
                                  (imessage/drain-once-and-reply! home db-path state-path (:service merged)))}]
     (case mode
+      :inspect (imessage/inspect-work-items-from-db! db-path state-path (:service merged))
       :loop (poller/start! poller-opts)
       (poller/run-once! poller-opts))))
 

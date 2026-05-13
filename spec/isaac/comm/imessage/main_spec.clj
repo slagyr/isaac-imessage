@@ -42,6 +42,17 @@
              (sut/parse-args ["--isaac-home" "/tmp/isaac-home"
                               "--service" "E:me"])))
 
+  (it "parses inspect mode"
+    (should= {:mode :inspect
+              :isaac-home "/tmp/isaac-home"
+              :db-path nil
+              :state-path nil
+              :config-path nil
+              :service nil
+              :interval-ms 1000}
+             (sut/parse-args ["inspect"
+                              "--isaac-home" "/tmp/isaac-home"])))
+
   (it "parses an explicit config path"
     (should= "/tmp/imessage.edn"
              (:config-path (sut/parse-args ["--config-path" "/tmp/imessage.edn"]))))
@@ -130,6 +141,28 @@
                                                          {:ok true})]
       (should= {:ok true}
                (sut/run-poller! {:mode :once
+                                 :isaac-home "/tmp/isaac-home"
+                                 :db-path nil
+                                 :state-path nil
+                                 :config-path nil
+                                 :service nil
+                                 :interval-ms nil}))))
+
+  (it "runs inspect mode without dispatching or sending"
+    (with-redefs [isaac.comm.imessage.config/default-config-path (fn [_] "/tmp/imessage.edn")
+                  isaac.comm.imessage.config/load-config (fn [_] {:service "E:file" :interval-ms 2500})
+                  isaac.comm.imessage/default-chat-db-path (fn [] "/Users/micah/Library/Messages/chat.db")
+                  isaac.comm.imessage/default-state-path (fn [] "/Users/micah/.isaac/imessage/state.edn")
+                  isaac.comm.imessage/inspect-work-items-from-db! (fn [db-path state-path service]
+                                                                    (should= ["/Users/micah/Library/Messages/chat.db"
+                                                                               "/Users/micah/.isaac/imessage/state.edn"
+                                                                               "E:file"]
+                                                                             [db-path state-path service])
+                                                                    {:work-items [{:session-key "imessage:chat-1"}]
+                                                                     :reply-preview [{:content "hello"}]})]
+      (should= {:work-items [{:session-key "imessage:chat-1"}]
+                :reply-preview [{:content "hello"}]}
+               (sut/run-poller! {:mode :inspect
                                  :isaac-home "/tmp/isaac-home"
                                  :db-path nil
                                  :state-path nil
