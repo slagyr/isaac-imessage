@@ -14,16 +14,16 @@
     (let [source (->FakeSource [{:message-rowid 41 :from-me? true  :text "outbound"}
                                 {:message-rowid 42 :from-me? false :text "hello"}])]
       (should= [{:message-rowid 42 :from-me? false :text "hello"}]
-               (:messages (sut/poll! source {:threads {} :watermark nil})))))
+               (:messages (sut/poll! source {:chats {} :watermark nil})))))
 
   (it "advances the watermark to the highest seen rowid"
     (let [source (->FakeSource [{:message-rowid 41 :from-me? true  :text "outbound"}
                                 {:message-rowid 42 :from-me? false :text "hello"}])]
       (should= {:message-rowid 42}
-               (get-in (sut/poll! source {:threads {} :watermark nil}) [:state :watermark]))))
+               (get-in (sut/poll! source {:chats {} :watermark nil}) [:state :watermark]))))
 
   (it "keeps the prior watermark when no messages are returned"
     (let [source (->FakeSource [])]
       (should= {:message-rowid 42}
-               (get-in (sut/poll! source {:threads {} :watermark {:message-rowid 42}})
+               (get-in (sut/poll! source {:chats {} :watermark {:message-rowid 42}})
                        [:state :watermark])))))

@@ -56,27 +56,27 @@
           source (reify isaac.comm.imessage.inbox/MessageSource
                    (-messages-since [_ _]
                      [{:message-rowid 42
-                       :thread-id      "chat-guid-1"
+                       :chat-guid      "chat-guid-1"
                        :handle         "+15551234567"
                        :from-me?       false
                        :text           "hello"}]))
           result (sut/poll-routed! source path)]
       (should= [{:message-rowid 42
-                 :thread-id      "chat-guid-1"
+                 :chat-guid      "chat-guid-1"
                  :handle         "+15551234567"
                  :from-me?       false
                  :text           "hello"
                  :session-key    "imessage:chat-guid-1"}]
                (:messages result))
       (should= "imessage:chat-guid-1"
-               (get-in (sut/read-state path) [:threads "chat-guid-1" :session-key]))))
+               (get-in (sut/read-state path) [:chats "chat-guid-1" :session-key]))))
 
   (it "does not replay already-watermarked messages on a second poll"
     (let [path   (temp-path "isaac-imessage-watermark-state")
           source (reify isaac.comm.imessage.inbox/MessageSource
                     (-messages-since [_ watermark]
                      (let [all [{:message-rowid 42
-                                 :thread-id      "chat-guid-1"
+                                 :chat-guid      "chat-guid-1"
                                  :handle         "+15551234567"
                                  :from-me?       false
                                  :text           "hello"}]
@@ -90,7 +90,7 @@
           source (reify isaac.comm.imessage.inbox/MessageSource
                    (-messages-since [_ _]
                      [{:message-rowid 42
-                       :thread-id      "chat-guid-1"
+                       :chat-guid      "chat-guid-1"
                        :handle         "+15551234567"
                        :from-me?       false
                        :text           "hello"
@@ -99,7 +99,7 @@
       (should= [{:session-key "imessage:chat-guid-1"
                  :input       "hello"
                  :origin      {:kind          :imessage
-                               :thread-id     "chat-guid-1"
+                               :chat-guid     "chat-guid-1"
                                :handle        "+15551234567"
                                :message-rowid 42
                                :sent-at       1234567890}}]
@@ -112,7 +112,7 @@
           source (reify isaac.comm.imessage.inbox/MessageSource
                    (-messages-since [_ watermark]
                      (let [all [{:message-rowid 42
-                                 :thread-id      "chat-guid-1"
+                                 :chat-guid      "chat-guid-1"
                                  :handle         "+15551234567"
                                  :from-me?       false
                                  :text           "hello"
@@ -126,14 +126,14 @@
     (should= {:session-key "imessage:chat-guid-1"
               :input       "hello"
               :origin      {:kind          :imessage
-                            :thread-id     "chat-guid-1"
+                            :chat-guid     "chat-guid-1"
                             :handle        "+15551234567"
                             :message-rowid 42
                             :sent-at       1234567890}}
              (sut/dispatch-request {:session-key "imessage:chat-guid-1"
                                     :input       "hello"
                                     :origin      {:kind          :imessage
-                                                  :thread-id     "chat-guid-1"
+                                                  :chat-guid     "chat-guid-1"
                                                   :handle        "+15551234567"
                                                   :message-rowid 42
                                                   :sent-at       1234567890}})))
@@ -142,7 +142,7 @@
     (let [calls (atom [])
           work-item {:session-key "imessage:chat-guid-1"
                      :input       "hello"
-                     :origin      {:kind :imessage :thread-id "chat-guid-1" :handle "+15551234567"}}]
+                     :origin      {:kind :imessage :chat-guid "chat-guid-1" :handle "+15551234567"}}]
       (with-redefs [isaac.api/get-session (fn [_state-dir _session-key] nil)
                     isaac.api/create-session! (fn [state-dir session-key opts]
                                                 (swap! calls conj [:create state-dir session-key opts])
@@ -154,20 +154,20 @@
                  (sut/dispatch-work-item! "/tmp/isaac-home" work-item))
         (should= [[:create "/tmp/isaac-home"
                    "imessage:chat-guid-1"
-                   {:origin {:kind :imessage :thread-id "chat-guid-1" :handle "+15551234567"}
+                   {:origin {:kind :imessage :chat-guid "chat-guid-1" :handle "+15551234567"}
                     :chatType "direct"
                     :channel "imessage"}]
                   [:dispatch "/tmp/isaac-home"
                    {:session-key "imessage:chat-guid-1"
                     :input "hello"
-                    :origin {:kind :imessage :thread-id "chat-guid-1" :handle "+15551234567"}}]]
+                    :origin {:kind :imessage :chat-guid "chat-guid-1" :handle "+15551234567"}}]]
                  @calls))))
 
   (it "dispatches without creating a session when one already exists"
     (let [calls (atom [])
           work-item {:session-key "imessage:chat-guid-1"
                      :input       "hello"
-                     :origin      {:kind :imessage :thread-id "chat-guid-1" :handle "+15551234567"}}]
+                     :origin      {:kind :imessage :chat-guid "chat-guid-1" :handle "+15551234567"}}]
       (with-redefs [isaac.api/get-session (fn [_state-dir _session-key] {:id "imessage:chat-guid-1"})
                     isaac.api/create-session! (fn [& _]
                                                 (swap! calls conj :create)
@@ -180,7 +180,7 @@
         (should= [[:dispatch "/tmp/isaac-home"
                    {:session-key "imessage:chat-guid-1"
                     :input "hello"
-                    :origin {:kind :imessage :thread-id "chat-guid-1" :handle "+15551234567"}}]]
+                    :origin {:kind :imessage :chat-guid "chat-guid-1" :handle "+15551234567"}}]]
                  @calls))))
 
   (it "dispatches a batch of work items in order"
@@ -323,7 +323,7 @@
 
   (it "drains one cycle with default db and state paths"
     (with-redefs [sut/default-chat-db-path (fn [] "/Users/micah/Library/Messages/chat.db")
-                  sut/default-state-path   (fn [] "/Users/micah/.isaac/imessage/state.edn")
+                  sut/default-state-path   (fn [] "/Users/micah/.isaac/comms/imessage/state.edn")
                   sut/poll-work-items-from-db! (fn [db-path state-path]
                                                  {:db-path db-path
                                                   :state-path state-path
@@ -334,7 +334,7 @@
                                              (should= [] items)
                                              [])]
       (should= {:db-path "/Users/micah/Library/Messages/chat.db"
-                :state-path "/Users/micah/.isaac/imessage/state.edn"
+                :state-path "/Users/micah/.isaac/comms/imessage/state.edn"
                 :state {:watermark nil}
                 :work-items []
                 :results []}

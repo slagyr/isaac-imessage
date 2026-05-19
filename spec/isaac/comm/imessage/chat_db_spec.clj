@@ -30,7 +30,7 @@
 
   (it "normalizes a raw Messages row into the inbox message shape"
     (should= {:message-rowid 42
-              :thread-id      "chat-guid-1"
+              :chat-guid      "chat-guid-1"
               :handle         "+15551234567"
               :from-me?       false
               :text           "hello"
@@ -68,7 +68,7 @@
                                 :date        1}])
           source (sut/message-source store)]
       (should= [{:message-rowid 42
-                 :thread-id      "chat-guid-1"
+                 :chat-guid      "chat-guid-1"
                  :handle         "+15551234567"
                  :from-me?       false
                  :text           "hello"

@@ -18,7 +18,7 @@
 (defn default-state-path
   ([] (default-state-path (System/getProperty "user.home")))
   ([home]
-   (str home "/.isaac/imessage/state.edn")))
+   (str home "/.isaac/comms/imessage/state.edn")))
 
 (defn- default-target [host slice record]
   (or (:target record)
@@ -52,7 +52,7 @@
   (let [current (read-state path)
         polled  (inbox/poll! source current)
         routed  (reduce (fn [{:keys [state messages]} message]
-                          (let [{:keys [session-key state]} (routing/ensure-session state (:thread-id message) (:handle message))]
+                          (let [{:keys [session-key state]} (routing/ensure-session state (:chat-guid message) (:handle message))]
                             {:state    state
                              :messages (conj messages (assoc message :session-key session-key))}))
                         {:state (:state polled) :messages []}
@@ -64,7 +64,7 @@
   {:session-key (:session-key message)
    :input       (:text message)
    :origin      {:kind          :imessage
-                 :thread-id     (:thread-id message)
+                 :chat-guid     (:chat-guid message)
                  :handle        (:handle message)
                  :message-rowid (:message-rowid message)
                  :sent-at       (:sent-at message)}})

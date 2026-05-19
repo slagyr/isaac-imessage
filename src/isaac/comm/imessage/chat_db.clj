@@ -69,11 +69,11 @@
 
 (defn normalize-row [row]
   {:message-rowid (:rowid row)
-   :thread-id      (:chat_guid row)
-   :handle         (:handle_id row)
-   :from-me?       (boolean (pos? (long (or (:is_from_me row) 0))))
-   :text           (:text row)
-   :sent-at        (:date row)})
+   :chat-guid     (:chat_guid row)
+   :handle        (:handle_id row)
+   :from-me?      (boolean (pos? (long (or (:is_from_me row) 0))))
+   :text          (:text row)
+   :sent-at       (:date row)})
 
 (defn fetch-messages [store watermark]
   (->> (rows-since store watermark)

@@ -39,12 +39,12 @@
           (worker/tick! {}))))))
 
 (defn- imessage-state-path []
-  (str (g/get :state-dir) "/.isaac/imessage/state.edn"))
+  (str (g/get :state-dir) "/.isaac/comms/imessage/state.edn"))
 
 (defn- parse-row [headers row]
   (let [m (zipmap headers row)]
     {:message-rowid (parse-long (get m "rowid"))
-     :thread-id     (get m "chat-guid")
+     :chat-guid     (get m "chat-guid")
      :handle        (get m "handle")
      :text          (get m "text")
      :from-me?      (pos? (or (parse-long (get m "from-me")) 0))

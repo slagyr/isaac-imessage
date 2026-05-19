@@ -3,7 +3,7 @@
     [clojure.edn :as edn]
     [isaac.fs :as fs]))
 
-(def default-state {:threads {} :watermark nil})
+(def default-state {:chats {} :watermark nil})
 
 (defn- normalize-state [state]
   (merge default-state state))
@@ -18,9 +18,9 @@
   (fs/spit path (pr-str (normalize-state state)))
   state)
 
-(defn assoc-thread-session [state thread-id handle session-key]
+(defn assoc-chat-session [state chat-guid handle session-key]
   (assoc-in (normalize-state state)
-            [:threads thread-id]
+            [:chats chat-guid]
             {:handle handle :session-key session-key}))
 
 (defn assoc-watermark [state watermark]

@@ -14,7 +14,7 @@
   (it "defaults the module state path under .isaac"
     (binding [*assert* false]
       (let [home "/Users/micah"]
-        (should= "/Users/micah/.isaac/imessage/state.edn"
+        (should= "/Users/micah/.isaac/comms/imessage/state.edn"
                  (sut/default-state-path home)))))
 
   (it "polls work items from a chat db path and persists state"
