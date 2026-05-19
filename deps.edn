@@ -5,7 +5,7 @@
                                 :git/sha "3f2364fb4940412f29b8abc5577ce74d5c20776a"}}
 
  :aliases
- {:dev-local {:override-deps {io.github.slagyr/isaac {:local/root "../isaac/isaac-worker-2"}}}
+ {:dev-local {:override-deps {io.github.slagyr/isaac {:local/root "../isaac"}}}
 
   :test {:extra-paths ["spec"]
          :extra-deps  {speclj/speclj {:mvn/version "3.13.0"}}}

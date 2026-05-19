@@ -1,3 +1,30 @@
-{:tasks
- {spec {:doc  "Run Speclj specs"
-        :task (shell "clojure" "-M:spec")}}}
+{:paths ["src" "spec"]
+
+ ;; bb tasks auto-detect isaac: a sibling ../isaac checkout (so cross-repo
+ ;; edits land without pushing) when present, otherwise the pinned git sha
+ ;; (so fresh clones / CI just work). Set ISAAC_GIT=1 to force git even
+ ;; when the local checkout exists.
+ :tasks
+ {:init (let [use-local? (and (not (System/getenv "ISAAC_GIT"))
+                              (babashka.fs/exists? "../isaac"))]
+          (babashka.deps/add-deps
+            {:deps (if use-local?
+                     '{io.github.slagyr/isaac      {:local/root "../isaac"}
+                       io.github.slagyr/isaac-spec {:local/root "../isaac"
+                                                    :deps/root  "spec"}}
+                     '{io.github.slagyr/isaac      {:git/url "https://github.com/slagyr/isaac.git"
+                                                    :git/sha "d304f4d1c257312584cc332b3c2d4f422c84f8a7"}
+                       io.github.slagyr/isaac-spec {:git/url   "https://github.com/slagyr/isaac.git"
+                                                    :git/sha   "d304f4d1c257312584cc332b3c2d4f422c84f8a7"
+                                                    :deps/root "spec"}})}))
+
+  spec     {:doc      "Run Speclj specs"
+            :requires ([speclj.main :as speclj])
+            :task     (apply speclj/-main "-c" "-D" "spec" *command-line-args*)}
+
+  features {:doc      "Run gherclj feature specs (features/ + isaac.**-steps)"
+            :requires ([gherclj.main :as main])
+            :task     (apply main/-main
+                        "-f" "features"
+                        "-s" "isaac.**-steps"
+                        *command-line-args*)}}}
