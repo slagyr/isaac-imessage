@@ -15,11 +15,9 @@
 
 (def ^:private captured-runner-calls (atom []))
 
-(alter-var-root #'apple-script/send-message!
-  (fn [_]
-    (fn [request]
-      (swap! captured-runner-calls conj request)
-      {:ok true})))
+(defn- capturing-send-message! [request]
+  (swap! captured-runner-calls conj request)
+  {:ok true})
 
 (defn default-imessage-setup []
   (session-steps/in-memory-state "target/test-state")
@@ -35,8 +33,9 @@
   (let [runtime-state-dir (str (g/get :state-dir) "/.isaac")]
     (g/assoc! :runtime-state-dir runtime-state-dir)
     (binding [fs/*fs* (or (g/get :mem-fs) fs/*fs*)]
-      (system/with-system {:state-dir runtime-state-dir}
-        (worker/tick! {})))))
+      (with-redefs [apple-script/send-message! capturing-send-message!]
+        (system/with-system {:state-dir runtime-state-dir}
+          (worker/tick! {}))))))
 
 (defn runner-was-invoked-with [table]
   (let [calls  (mapv (fn [call]
