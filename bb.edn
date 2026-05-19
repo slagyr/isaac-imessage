@@ -26,9 +26,10 @@
             :requires ([speclj.main :as speclj])
             :task     (apply speclj/-main "-c" "-D" "spec" *command-line-args*)}
 
-  features {:doc      "Run gherclj feature specs (features/ + isaac.**-steps)"
+  features {:doc      "Run gherclj feature specs (features/ + isaac.**-steps, excludes @wip)"
             :requires ([gherclj.main :as main])
             :task     (apply main/-main
                         "-f" "features"
                         "-s" "isaac.**-steps"
+                        "-t" "~wip"
                         *command-line-args*)}}}
