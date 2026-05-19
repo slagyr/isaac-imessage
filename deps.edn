@@ -1,15 +1,26 @@
-{:paths ["src" "resources"]
+{:paths ["src"]
 
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}
         io.github.slagyr/isaac {:git/url "https://github.com/slagyr/isaac.git"
-                                :git/sha "3f2364fb4940412f29b8abc5577ce74d5c20776a"}}
+                                :git/sha "d304f4d1c257312584cc332b3c2d4f422c84f8a7"}}
 
  :aliases
  {:dev-local {:override-deps {io.github.slagyr/isaac {:local/root "../isaac"}}}
 
   :test {:extra-paths ["spec"]
-         :extra-deps  {speclj/speclj {:mvn/version "3.13.0"}}}
+         :extra-deps  {io.github.slagyr/isaac-spec {:git/url   "https://github.com/slagyr/isaac.git"
+                                                    :git/sha   "d304f4d1c257312584cc332b3c2d4f422c84f8a7"
+                                                    :deps/root "spec"}}}
 
   :spec {:extra-paths ["spec"]
-         :extra-deps  {speclj/speclj {:mvn/version "3.13.0"}}
-         :main-opts   ["-m" "speclj.main" "-c" "-D" "spec"]}}}
+         :extra-deps  {io.github.slagyr/isaac-spec {:git/url   "https://github.com/slagyr/isaac.git"
+                                                    :git/sha   "d304f4d1c257312584cc332b3c2d4f422c84f8a7"
+                                                    :deps/root "spec"}}
+         :main-opts   ["-m" "speclj.main" "-c" "-D" "spec"]}
+
+  :features {:extra-deps {io.github.slagyr/isaac-spec {:git/url   "https://github.com/slagyr/isaac.git"
+                                                       :git/sha   "d304f4d1c257312584cc332b3c2d4f422c84f8a7"
+                                                       :deps/root "spec"}}
+             :main-opts  ["-m" "gherclj.main"
+                          "-f" "features"
+                          "-s" "isaac.**-steps"]}}}
