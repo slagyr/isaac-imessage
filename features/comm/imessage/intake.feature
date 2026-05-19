@@ -39,3 +39,18 @@ Feature: iMessage inbox poll → work item
       | 0      | first  | 10                   |
       | 1      | second | 11                   |
     And the imessage watermark is 11
+
+  Scenario: previously seen rows are skipped on the next poll
+    Given the EDN isaac file "imessage/state.edn" exists with:
+      | path                    | value |
+      | watermark.message-rowid | 10    |
+    And the imessage source has rows:
+      | rowid | chat-guid | handle       | text     | from-me |
+      | 8     | T1        | +15551234567 | older    | 0       |
+      | 10    | T1        | +15551234567 | seen     | 0       |
+      | 11    | T1        | +15551234567 | brand new | 0      |
+    When the imessage inbox is polled
+    Then the polled work items are:
+      | input     | origin.message-rowid |
+      | brand new | 11                   |
+    And the imessage watermark is 11
