@@ -1,4 +1,3 @@
-@wip
 Feature: iMessage chat.db adapter
   The chat.db adapter shells out to sqlite3 to read new rows from
   ~/Library/Messages/chat.db, normalizes each row into the

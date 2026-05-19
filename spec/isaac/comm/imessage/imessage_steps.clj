@@ -4,6 +4,7 @@
     [isaac.comm.delivery.worker :as worker]
     [isaac.comm.imessage :as imessage]
     [isaac.comm.imessage.apple-script :as apple-script]
+    [isaac.comm.imessage.chat-db :as chat-db]
     [isaac.comm.imessage.inbox :as inbox]
     [isaac.comm.imessage.state :as state]
     [isaac.comm.registry :as comm-registry]
@@ -71,6 +72,42 @@
       (g/assoc! :imessage-work-items (:work-items result))
       (g/assoc! :imessage-state      (:state result)))))
 
+(defn- parse-long-or-zero [s]
+  (or (when (string? s) (parse-long s)) 0))
+
+(defn- parse-raw-row [headers row]
+  (let [m (zipmap headers row)]
+    {:rowid      (parse-long-or-zero (get m "rowid"))
+     :chat_guid  (get m "chat_guid")
+     :handle_id  (get m "handle_id")
+     :is_from_me (parse-long-or-zero (get m "is_from_me"))
+     :text       (or (get m "text") "")
+     :date       (parse-long-or-zero (get m "date"))}))
+
+(defn imessage-chat-db-responds-with-rows [table]
+  (let [rows (mapv #(parse-raw-row (:headers table) %) (:rows table))]
+    (g/assoc! :imessage-chat-db-rows rows)))
+
+(defn- fake-shell-store [_db-path]
+  (let [rows (or (g/get :imessage-chat-db-rows) [])]
+    (reify chat-db/RawMessageStore
+      (-rows-since [_ watermark]
+        (let [floor (:message-rowid watermark)]
+          (if floor
+            (vec (filter #(> (:rowid %) floor) rows))
+            rows))))))
+
+(defn imessage-inbox-is-polled-from-chat-db []
+  (binding [fs/*fs* (or (g/get :mem-fs) fs/*fs*)]
+    (with-redefs [chat-db/shell-store fake-shell-store]
+      (let [result (imessage/poll-work-items-from-db! "/fake/chat.db"
+                                                      (imessage-state-path))]
+        (g/assoc! :imessage-work-items (:work-items result))
+        (g/assoc! :imessage-state      (:state result))))))
+
+(defn no-polled-work-items []
+  (g/should= [] (vec (g/get :imessage-work-items))))
+
 (defn polled-work-items-are [table]
   (let [items  (vec (g/get :imessage-work-items))
         result (match/match-entries table items)]
@@ -112,6 +149,21 @@
   "Installs an in-memory inbox/MessageSource fed by the table. Row
    columns: rowid, chat-guid, handle, text, from-me (0/1), sent-at
    (optional, defaults to 0).")
+
+(defgiven "the imessage chat.db responds with rows:" isaac.comm.imessage.imessage-steps/imessage-chat-db-responds-with-rows
+  "Installs a fake RawMessageStore returned by chat-db/shell-store
+   so 'the imessage inbox is polled from chat.db' exercises the
+   real normalize + fetch path without a real DB. Row columns are
+   the raw SQLite shape: rowid, chat_guid, handle_id, is_from_me,
+   text, date.")
+
+(defwhen "the imessage inbox is polled from chat.db" isaac.comm.imessage.imessage-steps/imessage-inbox-is-polled-from-chat-db
+  "Calls imessage/poll-work-items-from-db! with chat-db/shell-store
+   redefined to return the fake store from 'the imessage chat.db
+   responds with rows:'.")
+
+(defthen "there are no polled work items" isaac.comm.imessage.imessage-steps/no-polled-work-items
+  "Asserts the captured :work-items collection is empty.")
 
 (defwhen "the imessage inbox is polled" isaac.comm.imessage.imessage-steps/imessage-inbox-is-polled
   "Calls imessage/poll-work-items! against the source installed by
