@@ -16,7 +16,6 @@ Feature: iMessage chat → session routing
       | session-key | origin.chat-guid |
       | imessage:T7 | T7               |
 
-  @wip
   Scenario: a known chat keeps its existing session-key
     Given the imessage state has chats:
       | chat-guid | handle       | session-key |

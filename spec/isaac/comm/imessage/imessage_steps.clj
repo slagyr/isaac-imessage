@@ -5,6 +5,7 @@
     [isaac.comm.imessage :as imessage]
     [isaac.comm.imessage.apple-script :as apple-script]
     [isaac.comm.imessage.inbox :as inbox]
+    [isaac.comm.imessage.state :as state]
     [isaac.comm.registry :as comm-registry]
     [isaac.configurator :as configurator]
     [isaac.fs :as fs]
@@ -75,6 +76,19 @@
         result (match/match-entries table items)]
     (g/should= [] (:failures result))))
 
+(defn imessage-state-has-chats [table]
+  (binding [fs/*fs* (or (g/get :mem-fs) fs/*fs*)]
+    (let [headers (:headers table)
+          chats   (reduce (fn [acc row]
+                            (let [m (zipmap headers row)]
+                              (assoc acc (get m "chat-guid")
+                                     {:handle      (get m "handle")
+                                      :session-key (get m "session-key")})))
+                          {}
+                          (:rows table))]
+      (state/write-state! (imessage-state-path)
+                          (assoc state/default-state :chats chats)))))
+
 (defn imessage-watermark-is [n]
   (let [state (g/get :imessage-state)]
     (g/should= n (get-in state [:watermark :message-rowid]))))
@@ -87,6 +101,12 @@
                      @captured-runner-calls)
         result (match/match-entries table calls)]
     (g/should= [] (:failures result))))
+
+(defgiven "the imessage state has chats:" isaac.comm.imessage.imessage-steps/imessage-state-has-chats
+  "Writes <state-dir>/.isaac/comms/imessage/state.edn with the rows
+   keyed by chat-guid (string). Each row maps chat-guid → {:handle
+   :session-key}. Used to seed routing scenarios that need a known
+   chat to already be mapped before the poll.")
 
 (defgiven "the imessage source has rows:" isaac.comm.imessage.imessage-steps/imessage-source-has-rows
   "Installs an in-memory inbox/MessageSource fed by the table. Row
