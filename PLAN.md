@@ -2,183 +2,145 @@
 
 ## Goal
 
-Add bi-directional iMessage conversation support for Isaac on `zanebot`.
-
-This is not just an outbound notifier. It needs both:
-
-- outbound message delivery to Messages.app
-- inbound message intake from iMessage threads
+Bi-directional iMessage conversation support for Isaac on
+`zanebot`. Inbound messages route to Isaac sessions; crew replies
+go back through Messages.
 
 ## Architecture
 
-This should be a full channel/module integration, closer to Discord than to a
-small one-off `Comm` adapter.
+The integration runs as an Isaac comm module, activated by config
+under `:comms.imessage`. All wire-level interaction with macOS
+Messages is delegated to the [`imsg`](https://github.com/openclaw/imsg)
+CLI — Isaac talks JSON-RPC over a long-lived stdio subprocess.
 
-### Outbound
+### Pieces
 
-Implement a new `Comm` impl for iMessage delivery.
-
-- likely namespace: `isaac.comm.imessage`
-- implement `isaac.comm/Comm`
-- `send!` uses `osascript` or JXA to send text through Messages.app
-- support delivery worker integration for queued outbound sends
+- `isaac.comm.imessage` — the comm impl. Owns the `imsg` subprocess
+  via `imsg-client`, normalizes inbound notifications, dispatches
+  turns, and enqueues outbound replies onto the generic Isaac
+  delivery worker.
+- `isaac.comm.imessage.imsg-client` — JSON-RPC client. Spawns
+  `imsg rpc` once at comm startup, sends requests, correlates
+  responses by id, routes pushed notifications to a callback.
+  Reuses message construction from `isaac.util.jsonrpc`.
 
 ### Inbound
 
-Implement a polling/watching intake service for Messages data.
+1. Comm startup spawns `imsg rpc` and calls `watch.subscribe` so
+   imsg starts pushing message events.
+2. Each pushed notification (`{:method "message" :params {:message
+   {…}}}`) goes through `notification->work-item`:
+   - drop self-messages (`is_from_me`)
+   - drop senders not in `:allow-from` (fail-closed when set)
+   - drop notifications with no chat identity
+   - else build an Isaac work-item keyed by `imessage:<chat-guid>`
+3. The work-item is dispatched (`api/dispatch!`) with a trusted
+   inbound_meta system block carrying provider, surface, chat_guid,
+   handle, was_mentioned.
+4. The LLM response is chunked per `:message-cap` and each chunk is
+   enqueued for the Isaac delivery worker.
 
-- likely namespace: `isaac.comm.imessage.inbox`
-- read from `~/Library/Messages/chat.db`
-- detect unseen inbound messages
-- convert them into Isaac turns
-- persist cursor / last seen message state
+### Outbound
 
-### Routing
+1. Delivery worker reads pending records keyed `:comm "imessage"`
+   and calls `ImessageComm/send!`.
+2. `send!` translates the record into an imsg `send` request and
+   sends it over the JSON-RPC client.
+3. Response classification:
+   - `:ok` → record deleted from queue
+   - permission / unknown-buddy patterns → `:transient? false`
+     (dead-letter on first attempt thanks to `isaac-pu2x`)
+   - everything else → `:transient? true` (retry per the worker's
+     backoff schedule)
 
-Map iMessage conversations to Isaac sessions.
+### Lifecycle
 
-Recommended MVP rule:
+- `on-startup!` spawns the imsg subprocess (when `:db-path` is
+  configured), subscribes to inbound, stores the client in state.
+- `on-config-change!` tears down the client on slot removal;
+  otherwise updates the live slice in place.
 
-- one Isaac session per iMessage thread
+## zanebot Operational Requirements
 
-Store metadata such as:
+Same as `imsg` itself:
 
-- chat guid
-- handle id / phone / email
-- session key
-- crew / model defaults
-- last seen message id or timestamp
+- macOS Sonoma (14.0) or later for `imsg`
+- Full Disk Access for whatever runs the isaac process (reads
+  chat.db through imsg)
+- Automation → Messages for the same binary (imsg invokes
+  Messages.app for sends)
+- A logged-in GUI session (Messages.app must be running)
+- imsg installed (`brew install steipete/tap/imsg`) — universal
+  binary so x86_64 and arm64 hosts both work
 
-## zanebot Constraints
-
-This must run as the logged-in macOS user, not a headless daemon.
-
-Operational requirements:
-
-- Automation permission to control `Messages`
-- Full Disk Access to read `~/Library/Messages/chat.db`
-- a live GUI session
-
-This integration is likely brittle across macOS updates.
+Config example lives in `README.md`.
 
 ## MVP Scope
 
-Start narrow.
+Supported:
 
-### Supported
+- one-to-one conversations (chat_guid `any;-;<handle>`)
+- plain text inbound and outbound
+- allow-from sender filtering
+- per-comm message-cap (auto-chunk above)
 
-- one-to-one conversations only
-- plain text only
-- inbound polling
-- outbound text sending
-- thread-to-session persistence
+Explicitly out of scope (for now):
 
-### Explicitly Out of Scope
-
-- group chats
+- group chats (need group routing + allow-from semantics)
 - attachments
-- reactions / edits
+- reactions / edits / unsend
 - typing indicators
-- rich formatting
+- IMCore-bridge features that require SIP disabled
 
-## Suggested Repo Shape
+## Implementation Status
 
-Potential first-pass namespaces:
+Phase 1 — outbound via imsg — **done**, smoke-tested on zanebot.
 
-- `isaac.comm.imessage`
-- `isaac.comm.imessage.apple-script`
-- `isaac.comm.imessage.inbox`
-- `isaac.comm.imessage.routing`
-- `isaac.comm.imessage.state`
+Phase 2 — inbound via imsg `watch.subscribe` — **done**,
+smoke-tested on zanebot (round-tripped a real iMessage through the
+crew).
 
-Potential responsibilities:
+Phase 3 — operational polish — **in progress**:
 
-- `apple-script`: send via `osascript` / JXA
-- `inbox`: poll Messages database for new inbound rows
-- `routing`: map inbound thread -> Isaac session
-- `state`: persist watermarks / mapping metadata
-- `imessage`: public comm + lifecycle wiring
-
-## Delivery Semantics
-
-Outbound delivery should use the existing delivery-worker shape where possible.
-
-Expected record fields:
-
-- `:comm`
-- `:target`
-- `:content`
-- retry metadata
-
-`send!` should classify failures as:
-
-- transient: retry
-- permanent: dead-letter
-
-## Inbound Polling Strategy
-
-Start with polling, not file-watch magic.
-
-Possible loop:
-
-1. query `chat.db` for rows newer than stored watermark
-2. ignore messages sent by self
-3. normalize sender / thread identifiers
-4. route to session
-5. dispatch turn
-6. advance watermark only after successful ingest
-
-## Session Behavior
-
-Recommended defaults:
-
-- create session lazily on first inbound message
-- reuse same session for same iMessage thread
-- allow config override for crew / model selection
+- launchd plist for keeping isaac alive on zanebot
+- live coverage of allow-from drops, chunking, imsg subprocess
+  crash recovery
 
 ## Testing Strategy
 
 ### Unit Specs
 
-- message normalization
-- thread/session mapping
-- watermark persistence
-- outbound command construction
-- failure classification
+`spec/isaac/comm/imessage_spec.clj` — send! translation,
+notification->work-item filter cases, dispatch-request trusted
+block, result→reply text, chunking.
 
-### Integration Specs
+`spec/isaac/comm/imessage/imsg_client_spec.clj` — JSON-RPC client
+with a stubbed subprocess: request correlation, notification
+dispatch, write-then-close cleanup.
 
-- fake inbound DB rows -> Isaac turn dispatch
-- outbound send path through `send!`
+### Feature Specs (gherclj)
 
-### Acceptance Features
-
-First scenarios should cover:
-
-1. inbound text from a known thread reaches an Isaac session
-2. new thread creates a session
-3. Isaac reply is sent through Messages transport
-4. duplicate polling does not reprocess the same message
-
-## Recommended Implementation Order
-
-1. outbound-only sender abstraction
-2. delivery worker integration
-3. persisted routing + watermark state
-4. inbound poller against a test seam
-5. end-to-end thread -> session -> reply flow
-6. real `chat.db` adapter on zanebot
+- `comm/imessage/send.feature` — outbound via the delivery worker
+- `comm/imessage/intake.feature` — inbound notifications →
+  work-items
+- `comm/imessage/routing.feature` — chat_guid → session-key
+- `comm/imessage/intake_filtering.feature` — allow-from
+- `comm/imessage/lifecycle.feature` — comm activation /
+  deactivation / config change
+- `comm/imessage/turn_context.feature` — trusted inbound_meta
+  injection
+- `comm/imessage/reply.feature` — end-to-end inbound → reply
 
 ## Main Risk
 
-Outbound via `osascript` is straightforward.
+`imsg` is the load-bearing third-party dependency. Risks:
 
-Inbound iMessage observation is the risky part because it depends on local
-Messages database behavior and macOS permissions rather than a supported server
-API.
+- pre-1.0 maturity — JSON-RPC method names may shift between
+  releases
+- single-maintainer bus factor
+- IMCore-bridge features need SIP disabled; if upstream pivots
+  toward SIP-off-only, we'd be locked out
 
-## Recommendation
-
-Build this as a dedicated module with a small, careful MVP focused on direct
-message text threads only. Prove reliability on `zanebot` before expanding the
-surface area.
+Mitigations: pin the imsg version on each host; subscribe to
+release notes; keep our wire-level adapter (imsg-client + small
+notification->work-item) small enough that a fork is cheap.

@@ -1,9 +1,10 @@
 Feature: iMessage comm lifecycle
-  Isaac activates the iMessage Comm impl when comms.imessage config
-  is present at server startup, registers it in the comm-registry
-  so the delivery worker can find it, and tears it down when the
-  config is removed. Config changes (service, default-target,
-  poll-interval) update the live instance without restart.
+  Isaac activates the iMessage Comm impl when comms.imessage
+  config is present at server startup, registers it in the
+  comm-registry so the delivery worker can find it, and tears it
+  down when the config is removed. Config changes (message-cap,
+  allow-from, etc.) update the live instance in place without
+  restarting the imsg subprocess.
 
   Background:
     Given an in-memory Isaac state directory "target/test-state"
@@ -33,15 +34,15 @@ Feature: iMessage comm lifecycle
 
   Scenario: a config change updates the live comm without restart
     Given the EDN isaac file "config/isaac.edn" exists with:
-      | path                            | value    |
-      | comms.imessage.service          | iMessage |
-      | comms.imessage.poll-interval-ms | 1000     |
+      | path                       | value    |
+      | comms.imessage.service     | iMessage |
+      | comms.imessage.message-cap | 2000     |
     And the Isaac server is started
     When config is updated:
-      | path                            | value |
-      | comms.imessage.poll-interval-ms | 250   |
+      | path                       | value |
+      | comms.imessage.message-cap | 500   |
     And the isaac config is reloaded
     Then the imessage comm has state:
-      | path                    | value    |
-      | status                  | :changed |
-      | slice.poll-interval-ms  | 250      |
+      | path                | value    |
+      | status              | :changed |
+      | slice.message-cap   | 500      |

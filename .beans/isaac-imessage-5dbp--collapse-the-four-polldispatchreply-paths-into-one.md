@@ -1,10 +1,11 @@
 ---
 # isaac-imessage-5dbp
 title: Collapse the four poll/dispatch/reply paths into one dispatch-and-enqueue flow
-status: draft
+status: completed
 type: task
+priority: normal
 created_at: 2026-05-19T23:52:48Z
-updated_at: 2026-05-19T23:52:48Z
+updated_at: 2026-05-20T16:26:46Z
 ---
 
 ## Context

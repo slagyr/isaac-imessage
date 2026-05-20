@@ -1,55 +1,46 @@
 # isaac-imessage Roadmap
 
-## Phase 1
+## Phase 1 — Outbound (done)
 
-Establish outbound-only delivery.
+- `imsg-client` JSON-RPC subprocess wrapper
+- `ImessageComm/send!` routes records through imsg's `send` method
+- Permission / unknown-buddy errors classify permanent and
+  dead-letter on first attempt (thanks to isaac-pu2x)
+- Live verified on zanebot (Intel host, universal imsg binary)
 
-Candidate beans:
+## Phase 2 — Inbound (done)
 
-- add `osascript` sender abstraction
-- add outbound failure classification
-- add `Comm/send!` implementation for iMessage
-- add delivery-worker integration
+- `watch.subscribe` issued on comm startup; imsg pushes message
+  notifications
+- `notification->work-item` filters self / allow-from / no-chat,
+  builds the Isaac work-item
+- `on-imsg-notification!` dispatches the turn and enqueues reply
+  chunks
+- Live verified on zanebot (round-tripped a real iMessage through
+  the crew)
 
-## Phase 2
+## Phase 3 — Operational polish (in progress)
 
-Persist routing and inbound cursor state.
-
-Candidate beans:
-
-- thread/session mapping store
-- watermark persistence
-- self-message suppression
-
-## Phase 3
-
-Implement inbound polling.
-
-Candidate beans:
-
-- test seam for inbound message source
-- Messages `chat.db` poller
-- normalization of inbound rows to Isaac turns
-
-## Phase 4
-
-Connect end-to-end conversation flow.
-
-Candidate beans:
-
-- lazy session creation per thread
-- reuse existing session for known thread
-- inbound text -> turn dispatch -> outbound reply
-
-## MVP Acceptance Goals
-
-1. inbound text from a known thread reaches an Isaac session
-2. new thread creates a session
-3. Isaac reply is sent through Messages
-4. duplicate polling does not replay the same inbound message
+- launchd user agent so isaac survives zanebot reboots
+- live exercise of:
+  - allow-from drop on a disallowed sender
+  - reply chunking on a long LLM response
+  - imsg subprocess crash / restart recovery
+  - macOS update / Messages.app restart resilience
+- README hardened with troubleshooting (PATH, FDA, Automation)
 
 ## Stretch Goals
 
-- configurable crew/model selection per thread
-- richer logging and observability
-- operational setup guide for `zanebot`
+- per-chat crew/model overrides via config
+- richer observability (latency histograms, drop counts, last-seen
+  per chat)
+- group chat support
+- reaction / edit / unsend handling (probably needs SIP off; punt
+  until the use case is real)
+
+## Done — for reference
+
+- isaac-imessage-5dbp: collapsed four legacy poll/dispatch/reply
+  paths into a single inbound→dispatch→enqueue flow
+- isaac-pu2x: delivery worker honors `:transient? false` from
+  Comm/send!

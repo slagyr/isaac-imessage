@@ -1,45 +1,22 @@
 # Work Breakdown
 
-## Slice 1: Outbound Sender Seam
+The original polling-era slices (outbound seam → state seam →
+inbox seam → poller → real chat.db → end-to-end) are obsolete.
+The imsg migration collapsed them into a single inbound flow
+driven by `imsg watch.subscribe`. See `PLAN.md` for the current
+architecture and `ROADMAP.md` for phase status.
 
-Goal:
+## Remaining slices
 
-- construct a safe `osascript` invocation for Messages.app
-- classify send failures as transient or permanent
+### Operational hardening
 
-Deliverables:
+- launchd user agent for zanebot
+- live coverage of allow-from drops, chunking, imsg crash recovery
+- README troubleshooting section (PATH, Full Disk Access,
+  Automation grant)
 
-- `isaac.comm.imessage.apple-script/build-script`
-- `isaac.comm.imessage.apple-script/send-message!`
-- specs for escaping, script shape, and failure classification
+### Stretch
 
-## Slice 2: Persistent Integration State
-
-Goal:
-
-- define and persist the minimal state needed for inbound polling
-
-Deliverables:
-
-- watermark storage
-- thread -> session mapping storage
-- read/write helpers with default empty state
-
-## Slice 3: Top-Level Composition
-
-Goal:
-
-- provide one namespace that ties sender + state together
-
-Deliverables:
-
-- small top-level API for delivery and state access
-- no inbound poller yet
-
-## Later Slices
-
-- inbound database seam
-- real `chat.db` poller
-- duplicate suppression
-- end-to-end thread routing
-- operational setup for `zanebot`
+- per-chat crew/model overrides
+- group chats
+- reactions / edits / unsend
