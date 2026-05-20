@@ -61,36 +61,42 @@
   "Pure: translates an imsg `message` notification into an Isaac
    work-item, or nil if the message is self-sent, has no chat
    identity, or fails the allow-from filter. Filtered messages are
-   logged at debug for diagnostics."
+   logged at debug for diagnostics.
+
+   imsg pushes the payload nested under :params :message; the
+   :params map also carries the subscription id. Operator notes
+   from openclaw's parseIMessageNotification."
   [slice notification]
-  (let [params (:params notification)
-        chat-guid (or (:chat_guid params)
-                      (:chat_identifier params))]
+  (let [msg       (get-in notification [:params :message])
+        chat-guid (or (:chat_guid msg) (:chat_identifier msg))]
     (cond
       (not= "message" (:method notification))
       nil
 
-      (:is_from_me params)
+      (nil? msg)
+      (do (log/debug :imessage.notification/missing-message :params (:params notification)) nil)
+
+      (:is_from_me msg)
       nil
 
       (not chat-guid)
-      (do (log/debug :imessage.notification/no-chat-guid :params params) nil)
+      (do (log/debug :imessage.notification/no-chat-guid :params (:params notification)) nil)
 
-      (not (allowed? (:allow-from slice) (:sender params)))
+      (not (allowed? (:allow-from slice) (:sender msg)))
       (do (log/debug :imessage.intake/drop-sender
-                     :handle (:sender params)
+                     :handle (:sender msg)
                      :chat-guid chat-guid
-                     :message-rowid (:id params))
+                     :message-rowid (:id msg))
           nil)
 
       :else
       {:session-key (str "imessage:" chat-guid)
-       :input       (or (:text params) "")
+       :input       (or (:text msg) "")
        :origin      {:kind          :imessage
                      :chat-guid     chat-guid
-                     :handle        (:sender params)
-                     :message-rowid (:id params)
-                     :sent-at       (:created_at params)}})))
+                     :handle        (:sender msg)
+                     :message-rowid (:id msg)
+                     :sent-at       (:created_at msg)}})))
 
 ;; ===========================================================================
 ;; Dispatch & enqueue

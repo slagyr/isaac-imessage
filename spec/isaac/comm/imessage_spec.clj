@@ -41,13 +41,14 @@
         slice (delay {:allow-from allow})
         notif (fn [overrides]
                 {:method "message"
-                 :params (merge {:id 1
-                                 :chat_guid "T1"
-                                 :sender "+15551234567"
-                                 :text "hi"
-                                 :is_from_me false
-                                 :created_at "2026-05-20T00:00:00Z"}
-                                overrides)})]
+                 :params {:subscription 1
+                          :message (merge {:id 1
+                                           :chat_guid "T1"
+                                           :sender "+15551234567"
+                                           :text "hi"
+                                           :is_from_me false
+                                           :created_at "2026-05-20T00:00:00Z"}
+                                          overrides)}})]
 
     (it "produces a work-item for an allowed inbound message"
       (let [item (sut/notification->work-item @slice (notif {}))]

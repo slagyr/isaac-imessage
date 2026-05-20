@@ -62,16 +62,18 @@
 
 (defn- row->notification
   "Translate a scenario row (test-friendly column names) into the
-   imsg notification shape that handle-notification! consumes."
+   imsg notification shape that notification->work-item consumes:
+   {:method \"message\" :params {:message {...payload...} :subscription N}}."
   [headers row]
   (let [m (zipmap headers row)]
     {:method "message"
-     :params {:id          (some-> (get m "rowid") parse-long)
-              :chat_guid   (get m "chat-guid")
-              :sender      (get m "handle")
-              :text        (get m "text")
-              :is_from_me  (pos? (or (some-> (get m "from-me") parse-long) 0))
-              :created_at  (or (get m "sent-at") "1970-01-01T00:00:00Z")}}))
+     :params {:subscription 1
+              :message      {:id          (some-> (get m "rowid") parse-long)
+                             :chat_guid   (get m "chat-guid")
+                             :sender      (get m "handle")
+                             :text        (get m "text")
+                             :is_from_me  (pos? (or (some-> (get m "from-me") parse-long) 0))
+                             :created_at  (or (get m "sent-at") "1970-01-01T00:00:00Z")}}}))
 
 (defn- update-imessage-slice! [updater]
   (when-let [instance (g/get :imessage-instance)]
