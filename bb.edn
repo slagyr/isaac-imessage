@@ -63,7 +63,8 @@
                             (println "▸ sending iMessage to" handle "(requires Automation permission for Messages)")
                             (check "send" ["osascript" "-e"
                                            (str "tell application \"Messages\"\n"
-                                                "  send \"" (str/replace body "\"" "\\\"") "\" "
-                                                "to buddy \"" handle "\" of service \"iMessage\"\n"
+                                                "  set targetService to 1st service whose service type = iMessage\n"
+                                                "  set targetBuddy to buddy \"" handle "\" of targetService\n"
+                                                "  send \"" (str/replace body "\"" "\\\"") "\" to targetBuddy\n"
                                                 "end tell")]))
                           (println "▸ skipping send (pass <handle> <message> args to exercise it)")))}}}

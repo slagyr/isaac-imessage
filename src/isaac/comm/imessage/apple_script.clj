@@ -8,11 +8,28 @@
       (str/replace "\\" "\\\\")
       (str/replace "\"" "\\\"")))
 
+(defn- service-keyword [service]
+  ;; AppleScript service-type values are literal keywords (iMessage,
+  ;; SMS, etc.), not strings. Default to iMessage.
+  (or (when (string? service)
+        (let [lc (str/lower-case service)]
+          (cond
+            (= lc "imessage") "iMessage"
+            (= lc "sms")      "SMS"
+            :else             nil)))
+      "iMessage"))
+
 (defn build-script [{:keys [message service target]}]
+  ;; Modern Messages.app rejects `buddy "X" of service "iMessage"`
+  ;; with -10002 "Invalid key form". Resolve the service object
+  ;; first via `service type =`, then ask for the buddy on it.
   (str "tell application \"Messages\"\n"
-       "  send \"" (escape-applescript-string message) "\" to buddy \""
-       (escape-applescript-string target) "\" of service \""
-       (escape-applescript-string service) "\"\n"
+       "  set targetService to 1st service whose service type = "
+       (service-keyword service) "\n"
+       "  set targetBuddy to buddy \""
+       (escape-applescript-string target) "\" of targetService\n"
+       "  send \"" (escape-applescript-string message)
+       "\" to targetBuddy\n"
        "end tell"))
 
 (defn run-command [args]
