@@ -1,4 +1,3 @@
-@wip
 Feature: iMessage comm lifecycle
   Isaac activates the iMessage Comm impl when comms.imessage config
   is present at server startup, registers it in the comm-registry
@@ -8,13 +7,15 @@ Feature: iMessage comm lifecycle
 
   Background:
     Given an in-memory Isaac state directory "target/test-state"
+    And the imessage module is declared
 
   Scenario: comm activates when comms.imessage config is present
     Given the EDN isaac file "config/isaac.edn" exists with:
       | path                   | value    |
       | comms.imessage.service | iMessage |
-    When the Isaac server is started
-    Then the comm-registry contains "imessage"
+    When the Isaac process is started
+    Then the comm "imessage" exists with state:
+      | path | value |
     And the log has entries matching:
       | event           | comm     |
       | :comm/activated | imessage |
@@ -24,22 +25,23 @@ Feature: iMessage comm lifecycle
       | path                   | value    |
       | comms.imessage.service | iMessage |
     And the Isaac server is started
-    When the EDN isaac file "config/isaac.edn" exists with:
-      | path                   | value    |
-      | comms.imessage.service | #delete  |
+    When config is updated:
+      | path           | value   |
+      | comms.imessage | #delete |
     And the isaac config is reloaded
-    Then the comm-registry does not contain "imessage"
+    Then the comm "imessage" does not exist
 
   Scenario: a config change updates the live comm without restart
     Given the EDN isaac file "config/isaac.edn" exists with:
-      | path                          | value    |
-      | comms.imessage.service        | iMessage |
-      | comms.imessage.poll-interval-ms | 1000   |
+      | path                            | value    |
+      | comms.imessage.service          | iMessage |
+      | comms.imessage.poll-interval-ms | 1000     |
     And the Isaac server is started
-    When the EDN isaac file "config/isaac.edn" exists with:
-      | path                          | value    |
-      | comms.imessage.service        | iMessage |
-      | comms.imessage.poll-interval-ms | 250    |
+    When config is updated:
+      | path                            | value |
+      | comms.imessage.poll-interval-ms | 250   |
     And the isaac config is reloaded
-    Then the imessage comm status is "changed"
-    And the imessage comm slice has poll-interval-ms 250
+    Then the imessage comm has state:
+      | path                    | value    |
+      | status                  | :changed |
+      | slice.poll-interval-ms  | 250      |

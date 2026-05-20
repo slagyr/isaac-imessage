@@ -1,8 +1,11 @@
 {:paths ["src"]
 
- :deps {org.clojure/clojure {:mvn/version "1.12.0"}
-        io.github.slagyr/isaac {:git/url "https://github.com/slagyr/isaac.git"
-                                :git/sha "d304f4d1c257312584cc332b3c2d4f422c84f8a7"}}
+ ;; Root deps lists only what THIS module brings to the table. isaac itself
+ ;; is provided by the consumer (the host runtime, or the test alias). This
+ ;; mirrors isaac-discord and avoids the "two versions of isaac on the same
+ ;; classpath" conflict when module-loader resolves :isaac.comm.imessage
+ ;; via :local/root "." during tests.
+ :deps {org.clojure/clojure {:mvn/version "1.12.0"}}
 
  :aliases
  {:dev-local {:override-deps {io.github.slagyr/isaac {:local/root "../isaac"}}}

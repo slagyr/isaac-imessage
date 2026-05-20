@@ -83,6 +83,34 @@
                                     (:slice (imessage/state instance))
                                     (updater (:slice (imessage/state instance))))))
 
+(defn imessage-module-is-declared []
+  ;; isaac's discover! only picks up modules listed in config :modules or
+  ;; {cwd}/modules/. Pre-seed :modules so the manifest at src/isaac-manifest.edn
+  ;; activates when the server starts. Mirrors isaac-discord's
+  ;; ensure-discord-module-declared!.
+  (g/update! :server-config
+             #(update (or % {}) :modules
+                      (fn [m] (merge {:isaac.comm.imessage {:local/root "."}} m)))))
+
+(defn imessage-comm-has-state [table]
+  (let [instance (or (g/get :imessage-instance)
+                     (comm-registry/comm-for "imessage"))]
+    (g/should-not-be-nil instance)
+    (let [state (imessage/state instance)]
+      (doseq [row (:rows table)]
+        (let [row-map (zipmap (:headers table) row)
+              path    (get row-map "path")
+              keys    (mapv keyword (str/split path #"\."))
+              actual  (get-in state keys)
+              raw     (get row-map "value")
+              expected (cond
+                         (re-matches #"-?\d+" raw) (parse-long raw)
+                         (= "true" raw)            true
+                         (= "false" raw)           false
+                         (re-matches #":\S+" raw)  (keyword (subs raw 1))
+                         :else                     raw)]
+          (g/should= expected actual))))))
+
 (defn imessage-allow-from-is [value]
   (let [parts (->> (str/split (or value "") #",")
                    (map str/trim)
@@ -174,6 +202,18 @@
    real normalize + fetch path without a real DB. Row columns are
    the raw SQLite shape: rowid, chat_guid, handle_id, is_from_me,
    text, date.")
+
+(defgiven "the imessage module is declared" isaac.comm.imessage.imessage-steps/imessage-module-is-declared
+  "Adds {:isaac.comm.imessage {:local/root \".\"}} into the test's
+   :server-config :modules so isaac.module.loader/discover! activates
+   the manifest at src/isaac-manifest.edn when the Isaac server starts.
+   Used in lifecycle scenarios that exercise the configurator path
+   (not used by manual-registration scenarios like send.feature).")
+
+(defthen "the imessage comm has state:" isaac.comm.imessage.imessage-steps/imessage-comm-has-state
+  "Asserts the iMessage Comm's internal state map matches each row
+   (dotted path -> value). Reads via imessage/state. Existing
+   'the comm X exists with state:' step only reads telly comms.")
 
 (defgiven "comms.imessage.allow-from is {value:string}" isaac.comm.imessage.imessage-steps/imessage-allow-from-is
   "Updates the registered imessage comm's slice with :allow-from
