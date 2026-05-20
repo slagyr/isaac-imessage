@@ -42,7 +42,7 @@
                   ;; and any other per-comm files live.
                   :state-dir (str (g/get :state-dir) "/.isaac")}
         instance (imessage/make host)]
-    (configurator/on-startup! instance {:imsg/service "iMessage"})
+    (configurator/on-startup! instance {:imessage/service "iMessage"})
     (comm-registry/register-instance! "imessage" instance)
     (g/assoc! :imessage-instance instance)
     (g/assoc! :imessage-fake-client client)
@@ -138,14 +138,14 @@
                       (fn [m] (merge {:isaac.comm.imessage {:local/root "."}} m)))))
 
 (defn imessage-message-cap-is [n]
-  (update-imessage-slice! #(assoc % :imsg/message-cap n)))
+  (update-imessage-slice! #(assoc % :imessage/message-cap n)))
 
 (defn imessage-allow-from-is [value]
   (let [parts (->> (str/split (or value "") #",")
                    (map str/trim)
                    (remove str/blank?)
                    vec)]
-    (update-imessage-slice! #(assoc % :imsg/allow-from parts))))
+    (update-imessage-slice! #(assoc % :imessage/allow-from parts))))
 
 (defn no-polled-work-items []
   (g/should= [] (vec (g/get :imessage-work-items))))

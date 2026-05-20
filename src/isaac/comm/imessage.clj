@@ -18,7 +18,7 @@
 
 (defn- default-target [_host slice record]
   (or (:target record)
-      (:imsg/default-target slice)))
+      (:imessage/default-target slice)))
 
 (defn- imsg-params [record]
   (cond-> {:to (:target record) :text (:content record)}
@@ -81,7 +81,7 @@
       (not chat-guid)
       (do (log/debug :imessage.notification/no-chat-guid :params (:params notification)) nil)
 
-      (not (allowed? (:imsg/allow-from slice) (:sender msg)))
+      (not (allowed? (:imessage/allow-from slice) (:sender msg)))
       (do (log/debug :imessage.intake/drop-sender
                      :handle (:sender msg)
                      :chat-guid chat-guid
@@ -225,8 +225,8 @@
         slice      (:slice s)
         host       (:host s)
         state-dir  (:state-dir host)
-        max-chars  (or (:imsg/message-cap slice) 2000)
-        max-chunks (or (:imsg/max-chunks slice) default-max-chunks)]
+        max-chars  (or (:imessage/message-cap slice) 2000)
+        max-chunks (or (:imessage/max-chunks slice) default-max-chunks)]
     (when-let [work-item (notification->work-item slice notification)]
       (try
         (if state-dir
@@ -291,16 +291,16 @@
   (.-state* comm-impl))
 
 (defn- spawn-client! [comm-impl host slice]
-  (when (:imsg/db-path slice)
+  (when (:imessage/db-path slice)
     (try
-      (imsg-client/start! {:bin             (:imsg/bin slice)
-                           :db-path         (:imsg/db-path slice)
+      (imsg-client/start! {:bin             (:imessage/bin slice)
+                           :db-path         (:imessage/db-path slice)
                            :on-notification (fn [n] (on-imsg-notification! comm-impl n))
                            :on-disconnect   (fn []  (on-imsg-disconnect! comm-impl (state-atom comm-impl)))})
       (catch Exception e
         (log/error :imsg.client/start-failed
                    :error (.getMessage e)
-                   :imsg/bin (:imsg/bin slice))
+                   :imessage/bin (:imessage/bin slice))
         nil))))
 
 (deftype ImessageComm [host state*]
@@ -319,7 +319,7 @@
     (let [slice   (:slice @state*)
           client  (:imsg-client @state*)
           target  (default-target host slice record)
-          service (or (:service record) (:imsg/service slice))]
+          service (or (:service record) (:imessage/service slice))]
       (if client
         (send! client {:content (:content record)
                        :service service

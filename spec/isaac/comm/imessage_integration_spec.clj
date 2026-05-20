@@ -28,8 +28,8 @@
   (it "uses configured defaults when delivering a record"
     (let [[client calls] (fake-client+calls)
           instance       (sut/make {:name "imessage-slot" :imsg-client client})]
-      (configurator/on-startup! instance {:imsg/service        "E:me"
-                                           :imsg/default-target "+15551234567"})
+      (configurator/on-startup! instance {:imessage/service        "E:me"
+                                           :imessage/default-target "+15551234567"})
       (should= {:ok true} (comm/send! instance {:content "hello"}))
       (should= [{:method "send"
                  :params {:to "+15551234567" :text "hello" :service "e:me"}}]
@@ -38,8 +38,8 @@
   (it "prefers per-record target and service over slice defaults"
     (let [[client calls] (fake-client+calls)
           instance       (sut/make {:name "imessage-slot" :imsg-client client})]
-      (configurator/on-startup! instance {:imsg/service        "E:me"
-                                           :imsg/default-target "+15551234567"})
+      (configurator/on-startup! instance {:imessage/service        "E:me"
+                                           :imessage/default-target "+15551234567"})
       (should= {:ok true} (comm/send! instance {:content "hello"
                                                 :service "E:other"
                                                 :target "+15550000000"}))

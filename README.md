@@ -38,43 +38,43 @@ sends and the chat.db is owned by the GUI user.
 Add `comms.imessage` to your `~/.isaac/config/isaac.edn`:
 
 ```clojure
-{:comms {:imessage {:imsg/service     "iMessage"
-                    :imsg/db-path     "/Users/zane/Library/Messages/chat.db"
-                    :imsg/bin         "/usr/local/bin/imsg"
-                    :imsg/allow-from  ["+15551234567" "friend@icloud.com"]}}}
+{:comms {:imessage {:imessage/service     "iMessage"
+                    :imessage/db-path     "/Users/zane/Library/Messages/chat.db"
+                    :imessage/bin         "/usr/local/bin/imsg"
+                    :imessage/allow-from  ["+15551234567" "friend@icloud.com"]}}}
 ```
 
-All slice keys live in the `:imsg/` keyword namespace so the comm
+All slice keys live in the `:imessage/` keyword namespace so the comm
 config doesn't collide with anything Isaac (or another module)
 might inject into the same map.
 
-- `:imsg/service` — Messages service name. Almost always
+- `:imessage/service` — Messages service name. Almost always
   `"iMessage"`; use `"SMS"` only if you specifically want SMS over
   a paired phone.
-- `:imsg/db-path` — absolute path to the Messages chat database.
+- `:imessage/db-path` — absolute path to the Messages chat database.
   Required to spawn the imsg subprocess; omitting it leaves the
   comm dormant (handy for non-Mac dev, and a guard so tests can't
   accidentally hit a real chat.db).
-- `:imsg/bin` — path to the imsg binary. Defaults to whatever's
+- `:imessage/bin` — path to the imsg binary. Defaults to whatever's
   on `PATH`; set explicitly when the process launching isaac
   doesn't see `/usr/local/bin` or `/opt/homebrew/bin` (common for
   headless processes like launchd jobs).
-- `:imsg/allow-from` — phone numbers / emails (string allowlist).
+- `:imessage/allow-from` — phone numbers / emails (string allowlist).
   Notifications from senders not in this list are dropped at
   debug log level (`:imessage.intake/drop-sender`).
   **Fail-closed**: an empty list drops everything; omit
-  `:imsg/allow-from` to skip filtering entirely.
+  `:imessage/allow-from` to skip filtering entirely.
 
 Optional:
 
-- `:imsg/default-target` — fallback handle for outbound records
+- `:imessage/default-target` — fallback handle for outbound records
   that don't carry their own `:target`. Rarely needed.
-- `:imsg/message-cap` — split replies above this character count
+- `:imessage/message-cap` — split replies above this character count
   into multiple sends. Default 2000.
-- `:imsg/max-chunks` — hard cap on how many chunks a single reply
+- `:imessage/max-chunks` — hard cap on how many chunks a single reply
   produces. Above the cap the tail is dropped with a truncation
   notice so a runaway LLM response can't flood Messages. Default
-  3 (≈6000 chars total at the default `:imsg/message-cap`).
+  3 (≈6000 chars total at the default `:imessage/message-cap`).
 
 ### 3. Verify the host
 
