@@ -11,7 +11,8 @@
  ;; :deps/root, leaving ../isaac/spec off the classpath.
  :tasks
  {:init (let [use-local? (and (not (System/getenv "ISAAC_GIT"))
-                              (babashka.fs/exists? "../isaac"))]
+                              (babashka.fs/exists? "../isaac")
+                              (babashka.fs/exists? "../isaac/spec"))]
           (babashka.deps/add-deps
             {:deps (if use-local?
                      '{io.github.slagyr/isaac      {:local/root "../isaac"}
