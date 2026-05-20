@@ -1,6 +1,7 @@
 (ns isaac.comm.imessage.poller
   (:require
-    [isaac.comm.imessage :as imessage]))
+    [isaac.comm.imessage :as imessage]
+    [isaac.logger :as log]))
 
 (defn- sleep-ms [ms]
   (Thread/sleep ms))
@@ -17,7 +18,10 @@
         last-result (atom nil)
         runner      (future
                       (while @running?
-                        (reset! last-result (drain-fn isaac-home db-path state-path))
+                        (try
+                          (reset! last-result (drain-fn isaac-home db-path state-path))
+                          (catch Exception e
+                            (log/warn :imessage.poller/drain-failed :error (.getMessage e))))
                         (when @running?
                           (sleep-fn interval-ms))))]
     {:running?    running?

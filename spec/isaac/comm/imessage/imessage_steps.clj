@@ -7,6 +7,7 @@
     [isaac.comm.imessage.apple-script :as apple-script]
     [isaac.comm.imessage.chat-db :as chat-db]
     [isaac.comm.imessage.inbox :as inbox]
+    [isaac.comm.imessage.poller :as poller]
     [isaac.comm.imessage.state :as state]
     [isaac.comm.registry :as comm-registry]
     [isaac.configurator :as configurator]
@@ -18,6 +19,8 @@
 (helper! isaac.comm.imessage.imessage-steps)
 
 (def ^:private captured-runner-calls (atom []))
+(def ^:private source-poll-count    (atom 0))
+(def ^:private source-raise-budget  (atom 0))
 
 (defn- capturing-send-message! [request]
   (swap! captured-runner-calls conj request)
@@ -26,6 +29,8 @@
 (defn default-imessage-setup []
   (session-steps/in-memory-state "target/test-state")
   (reset! captured-runner-calls [])
+  (reset! source-poll-count 0)
+  (reset! source-raise-budget 0)
   (let [host     {:name "imessage" :service "iMessage"}
         instance (imessage/make host)]
     (configurator/on-startup! instance {:service "iMessage"})
@@ -58,13 +63,17 @@
     (g/assoc! :imessage-rows rows)))
 
 (defn- imessage-source []
-  (let [rows (or (g/get :imessage-rows) [])]
-    (reify inbox/MessageSource
-      (-messages-since [_ watermark]
-        (let [floor (:message-rowid watermark)]
-          (if floor
-            (vec (filter #(> (:message-rowid %) floor) rows))
-            rows))))))
+  (reify inbox/MessageSource
+    (-messages-since [_ watermark]
+      (swap! source-poll-count inc)
+      (when (pos? @source-raise-budget)
+        (swap! source-raise-budget dec)
+        (throw (ex-info "source raised" {:reason :test})))
+      (let [rows  (or (g/get :imessage-rows) [])
+            floor (:message-rowid watermark)]
+        (if floor
+          (vec (filter #(> (:message-rowid %) floor) rows))
+          rows)))))
 
 (defn- imessage-slice []
   (or (some-> (g/get :imessage-instance) imessage/state :slice) {}))
@@ -82,6 +91,27 @@
     (configurator/on-config-change! instance
                                     (:slice (imessage/state instance))
                                     (updater (:slice (imessage/state instance))))))
+
+(defn imessage-source-raises-then-succeeds [n]
+  (reset! source-raise-budget n))
+
+(defn imessage-poller-is-ticked-n-times [n]
+  (binding [fs/*fs* (or (g/get :mem-fs) fs/*fs*)]
+    (let [opts {:isaac-home "/fake/home"
+                :db-path    "/fake/chat.db"
+                :state-path (imessage-state-path)
+                :drain-fn   (fn [_ _ state-path]
+                              (let [source (imessage-source)
+                                    result (imessage/poll-work-items! source state-path)]
+                                (g/assoc! :imessage-work-items (:work-items result))
+                                (g/assoc! :imessage-state      (:state result))
+                                result))}]
+      (dotimes [_ n]
+        (try (poller/run-once! opts)
+             (catch Exception _ nil))))))
+
+(defn imessage-source-was-polled-n-times [n]
+  (g/should= n @source-poll-count))
 
 (defn imessage-module-is-declared []
   ;; isaac's discover! only picks up modules listed in config :modules or
@@ -202,6 +232,20 @@
    real normalize + fetch path without a real DB. Row columns are
    the raw SQLite shape: rowid, chat_guid, handle_id, is_from_me,
    text, date.")
+
+(defgiven "the imessage source raises on the next {n:int} polls then succeeds" isaac.comm.imessage.imessage-steps/imessage-source-raises-then-succeeds
+  "Sets a budget of N raise-on-poll responses. Once exhausted, the
+   source behaves normally (returning rows from g state). Used by
+   the poller resilience scenario.")
+
+(defwhen "the imessage poller is ticked {n:int} times" isaac.comm.imessage.imessage-steps/imessage-poller-is-ticked-n-times
+  "Invokes poller/run-once! N times with a drain-fn that uses the
+   in-memory source. Wraps each tick in try/catch so a raise on one
+   tick does not abort the loop (mirroring start!'s production
+   resilience). Captures the final tick's :work-items and :state.")
+
+(defthen "the imessage source was polled {n:int} times" isaac.comm.imessage.imessage-steps/imessage-source-was-polled-n-times
+  "Asserts the recorded source-poll count.")
 
 (defgiven "the imessage module is declared" isaac.comm.imessage.imessage-steps/imessage-module-is-declared
   "Adds {:isaac.comm.imessage {:local/root \".\"}} into the test's
