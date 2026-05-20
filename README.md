@@ -1,5 +1,7 @@
 # isaac-imessage
 
+[![Spec](https://github.com/slagyr/isaac-imessage/actions/workflows/spec.yml/badge.svg)](https://github.com/slagyr/isaac-imessage/actions/workflows/spec.yml)
+
 Bi-directional iMessage support for Isaac.
 
 Runs as an Isaac module on a macOS host that is logged into the
