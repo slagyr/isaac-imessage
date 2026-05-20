@@ -4,8 +4,8 @@
     [gherclj.core :as g :refer [defgiven defwhen defthen helper!]]
     [isaac.comm.delivery.worker :as worker]
     [isaac.comm.imessage :as imessage]
-    [isaac.comm.imessage.apple-script :as apple-script]
     [isaac.comm.imessage.chat-db :as chat-db]
+    [isaac.comm.imessage.imsg-client :as imsg-client]
     [isaac.comm.imessage.inbox :as inbox]
     [isaac.comm.imessage.poller :as poller]
     [isaac.comm.imessage.state :as state]
@@ -20,36 +20,44 @@
 
 (helper! isaac.comm.imessage.imessage-steps)
 
-(def ^:private captured-runner-calls (atom []))
-(def ^:private source-poll-count    (atom 0))
-(def ^:private source-raise-budget  (atom 0))
+(def ^:private source-poll-count   (atom 0))
+(def ^:private source-raise-budget (atom 0))
 
-(defn- capturing-send-message! [request]
-  (swap! captured-runner-calls conj request)
-  {:ok true})
+(defrecord FakeImsgClient [calls]
+  imsg-client/Client
+  (-request! [_ method params]
+    (swap! calls conj {:method method :params params})
+    (doto (promise) (deliver {:ok true})))
+  (-notify! [_ method params]
+    (swap! calls conj {:method method :params params}))
+  (-stop!    [_] nil)
+  (-alive?-client [_] true))
+
+(defn- fake-imsg-client []
+  (->FakeImsgClient (atom [])))
 
 (defn default-imessage-setup []
   ;; Don't blow away an already-initialized state dir (e.g. default Grover
   ;; setup ran first to install LLM defaults). Otherwise initialize fresh.
   (when-not (g/get :state-dir)
     (session-steps/in-memory-state "target/test-state"))
-  (reset! captured-runner-calls [])
   (reset! source-poll-count 0)
   (reset! source-raise-budget 0)
-  (let [host     {:name "imessage" :service "iMessage"}
+  (let [client   (fake-imsg-client)
+        host     {:name "imessage" :service "iMessage" :imsg-client client}
         instance (imessage/make host)]
     (configurator/on-startup! instance {:service "iMessage"})
     (comm-registry/register-instance! "imessage" instance)
-    (g/assoc! :imessage-instance instance)))
+    (g/assoc! :imessage-instance instance)
+    (g/assoc! :imessage-fake-client client)))
 
 (defn imessage-delivery-worker-ticks []
   (g/assoc! :isaac-file-phase :assert)
   (let [runtime-state-dir (str (g/get :state-dir) "/.isaac")]
     (g/assoc! :runtime-state-dir runtime-state-dir)
     (binding [fs/*fs* (or (g/get :mem-fs) fs/*fs*)]
-      (with-redefs [apple-script/send-message! capturing-send-message!]
-        (system/with-system {:state-dir runtime-state-dir}
-          (worker/tick! {}))))))
+      (system/with-system {:state-dir runtime-state-dir}
+        (worker/tick! {})))))
 
 (defn- imessage-state-path []
   (str (g/get :state-dir) "/.isaac/comms/imessage/state.edn"))
@@ -236,12 +244,15 @@
     (g/should= n (get-in state [:watermark :message-rowid]))))
 
 (defn runner-was-invoked-with [table]
-  (let [calls  (mapv (fn [call]
-                       {:service (:service call)
-                        :buddy   (:target call)
-                        :body    (:message call)})
-                     @captured-runner-calls)
-        result (match/match-entries table calls)]
+  (let [fake-client (g/get :imessage-fake-client)
+        calls       (->> @(:calls fake-client)
+                         (filter #(= "send" (:method %)))
+                         (mapv (fn [call]
+                                 (let [params (:params call)]
+                                   {:service (or (:service params) "imessage")
+                                    :buddy   (:to params)
+                                    :body    (:text params)}))))
+        result      (match/match-entries table calls)]
     (g/should= [] (:failures result))))
 
 (defgiven "the imessage state has chats:" isaac.comm.imessage.imessage-steps/imessage-state-has-chats

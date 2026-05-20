@@ -19,8 +19,8 @@ Feature: iMessage end-to-end reply
     When the imessage inbox is polled and dispatched
     And the imessage delivery worker ticks
     Then the imessage runner was invoked with:
-      | service  | buddy        | body                |
-      | iMessage | +15551234567 | thanks for the ping |
+      | buddy        | body                |
+      | +15551234567 | thanks for the ping |
 
   Scenario: a crew response longer than the message-cap is chunked into separate sends
     Given comms.imessage.message-cap is 20

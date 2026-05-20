@@ -7,6 +7,7 @@
     [isaac.comm.delivery.queue :as queue]
     [isaac.comm.imessage.apple-script :as apple-script]
     [isaac.comm.imessage.chat-db :as chat-db]
+    [isaac.comm.imessage.imsg-client :as imsg-client]
     [isaac.comm.imessage.inbox :as inbox]
     [isaac.comm.imessage.poller :as poller]
     [isaac.comm.imessage.routing :as routing]
@@ -31,16 +32,32 @@
       (:default-target slice)
       (:default-target host)))
 
-(defn- delivery-request [record]
-  {:message (:content record)
-   :service (:service record)
-   :target  (:target record)})
+(defn- imsg-params [record]
+  (cond-> {:to (:target record) :text (:content record)}
+    (:service record) (assoc :service (str/lower-case (:service record)))))
 
-(defn send! [record]
-  (apple-script/send-message! (delivery-request record)))
+(defn- classify-imsg-error [error]
+  ;; imsg's structured JSON-RPC errors carry codes / messages we can
+  ;; classify into transient vs permanent. Until we have a real error
+  ;; corpus, treat the lookup/permission-style messages as permanent
+  ;; and everything else as transient.
+  (let [msg (or (some-> (ex-data error) :rpc-error :message)
+                (.getMessage ^Throwable error)
+                "")]
+    (cond
+      (re-find #"(?i)not authorized|permission|unknown buddy|invalid handle|no such" msg)
+      {:ok false :transient? false :error msg}
 
-(defn send-message! [request]
-  (apple-script/send-message! request))
+      :else
+      {:ok false :transient? true :error msg})))
+
+(defn send! [client record]
+  (let [result (deref (imsg-client/request! client "send" (imsg-params record))
+                      30000 ::timeout)]
+    (cond
+      (= ::timeout result)         {:ok false :transient? true :error :timeout}
+      (instance? Throwable result) (classify-imsg-error result)
+      :else                        {:ok true})))
 
 (defn read-state [path]
   (state/read-state path))
@@ -321,17 +338,24 @@
   (on-turn-end [_ _ _] nil)
   (send! [_ record]
     (let [slice   (:slice @state*)
+          client  (:imsg-client @state*)
           target  (default-target host slice record)
           service (or (:service record)
                       (:service slice)
                       (:service host))]
-      (send! {:content (:content record)
-              :service service
-              :target  target})))
+      (if client
+        (send! client {:content (:content record)
+                       :service service
+                       :target  target})
+        {:ok false :transient? true :error "imsg-client not started"})))
 
   configurator/Reconfigurable
   (on-startup! [_ slice]
-    (reset! state* {:host host :slice slice :status :started})
+    (let [client (or (:imsg-client host)
+                     (when (:db-path slice)
+                       (imsg-client/start! {:bin     (:imsg-bin slice)
+                                            :db-path (:db-path slice)})))]
+      (reset! state* {:host host :slice slice :status :started :imsg-client client}))
     (start-poller! state* host slice))
   (on-config-change! [_ old-slice new-slice]
     (cond

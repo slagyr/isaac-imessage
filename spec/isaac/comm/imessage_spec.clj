@@ -4,6 +4,7 @@
     [isaac.comm.imessage :as sut]
     [isaac.comm.imessage.apple-script]
     [isaac.comm.imessage.chat-db]
+    [isaac.comm.imessage.imsg-client]
     [isaac.comm.imessage.inbox]
     [isaac.comm.imessage.main]
     [isaac.comm.imessage.poller]
@@ -28,18 +29,22 @@
     (should-not-be-nil (find-ns 'isaac.comm.imessage.routing))
     (should-not-be-nil (find-ns 'isaac.comm.imessage.state)))
 
-  (it "normalizes a delivery record before sending"
-    (with-redefs [isaac.comm.imessage.apple-script/send-message!
-                  (fn [request]
-                    (should= {:message "hello"
-                              :service "E:me"
-                              :target "+15551234567"}
-                             request)
-                    {:ok true})]
+  (it "translates a delivery record into imsg send params"
+    (let [calls (atom [])
+          fake  (reify isaac.comm.imessage.imsg-client/Client
+                  (-request! [_ method params]
+                    (swap! calls conj {:method method :params params})
+                    (doto (promise) (deliver {:ok true})))
+                  (-notify! [_ _ _] nil)
+                  (-stop!   [_] nil)
+                  (-alive?-client [_] true))]
       (should= {:ok true}
-               (sut/send! {:content "hello"
-                           :service "E:me"
-                           :target "+15551234567"}))))
+               (sut/send! fake {:content "hello"
+                                :service "iMessage"
+                                :target  "+15551234567"}))
+      (should= [{:method "send"
+                 :params {:to "+15551234567" :text "hello" :service "imessage"}}]
+               @calls)))
 
   (it "polls inbound messages and persists the updated state"
     (let [path    (temp-path "isaac-imessage-top-level-state")

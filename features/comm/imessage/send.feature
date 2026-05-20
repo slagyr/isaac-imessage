@@ -22,8 +22,8 @@ Feature: iMessage outbound send
     When the imessage delivery worker ticks
     Then the isaac file "comm/delivery/pending/7f3a.edn" does not exist
     And the imessage runner was invoked with:
-      | service  | buddy        | body          |
-      | iMessage | +15551234567 | Hello, world. |
+      | buddy        | body          |
+      | +15551234567 | Hello, world. |
 
   Scenario: an iMessage delivery to an email handle is sent
     Given the EDN isaac file "comm/delivery/pending/9c2e.edn" contains:
@@ -35,5 +35,5 @@ Feature: iMessage outbound send
     When the imessage delivery worker ticks
     Then the isaac file "comm/delivery/pending/9c2e.edn" does not exist
     And the imessage runner was invoked with:
-      | service  | buddy             | body      |
-      | iMessage | friend@icloud.com | Hi there. |
+      | buddy             | body      |
+      | friend@icloud.com | Hi there. |

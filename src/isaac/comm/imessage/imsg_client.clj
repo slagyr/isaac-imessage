@@ -15,6 +15,14 @@
     (java.io BufferedReader InputStreamReader OutputStreamWriter Writer)
     (java.nio.charset StandardCharsets)))
 
+(defprotocol Client
+  "imsg-client API. Real impl wraps a long-lived `imsg rpc`
+   subprocess; tests reify a stub that captures calls."
+  (-request! [client method params])
+  (-notify!  [client method params])
+  (-stop!    [client])
+  (-alive?-client [client]))
+
 (defprotocol Subprocess
   "Seam over a live OS subprocess. The default impl wraps a
    babashka.process Process; tests provide a fake."
@@ -86,6 +94,36 @@
                                   {:type :imsg/closed})))
       (reset! (:pending client) {}))))
 
+(defn- write-line! [^Writer writer line]
+  (locking writer
+    (.write writer ^String line)
+    (.flush writer)))
+
+(defrecord SubprocessClient [proc writer pending next-id on-notification reader-thread]
+  Client
+  (-request! [_ method params]
+    (let [id   (swap! next-id inc)
+          line (jrpc/request-line id method params)
+          p    (promise)]
+      (swap! pending assoc id {:promise p :method method})
+      (try
+        (write-line! writer line)
+        (catch Exception e
+          (swap! pending dissoc id)
+          (deliver p (ex-info "failed to write imsg request"
+                              {:type :imsg/write-failed :method method}
+                              e))))
+      p))
+  (-notify! [_ method params]
+    (write-line! writer (jrpc/notification-line method params)))
+  (-alive?-client [_]
+    (-alive? proc))
+  (-stop! [_]
+    (try (.close ^Writer writer) (catch Exception _ nil))
+    (try (-destroy proc) (catch Exception _ nil))
+    (when reader-thread
+      (try (.join ^Thread reader-thread 1000) (catch Exception _ nil)))))
+
 (defn start!
   "Spawn the imsg subprocess and return a client.
 
@@ -95,60 +133,17 @@
      :process         - inject a Subprocess directly (for tests)
      :on-notification - (fn [{:method :params}]) for push notifications"
   [{:keys [process on-notification] :as opts}]
-  (let [proc            (or process (spawn-imsg! opts))
-        writer          (-stdin-writer proc)
-        reader          (-stdout-reader proc)
-        pending         (atom {})
-        next-id         (atom 0)
-        client          {:proc            proc
-                         :writer          writer
-                         :pending         pending
-                         :next-id         next-id
-                         :on-notification on-notification}
-        reader-thread   (doto (Thread. ^Runnable #(read-loop! client reader)
-                                       "imsg-client-reader")
-                          (.setDaemon true)
-                          (.start))]
+  (let [proc          (or process (spawn-imsg! opts))
+        writer        (-stdin-writer proc)
+        reader        (-stdout-reader proc)
+        client        (->SubprocessClient proc writer (atom {}) (atom 0) on-notification nil)
+        reader-thread (doto (Thread. ^Runnable #(read-loop! client reader)
+                                     "imsg-client-reader")
+                        (.setDaemon true)
+                        (.start))]
     (assoc client :reader-thread reader-thread)))
 
-(defn alive? [client]
-  (and client (-alive? (:proc client))))
-
-(defn- write-line! [^Writer writer line]
-  (locking writer
-    (.write writer ^String line)
-    (.flush writer)))
-
-(defn request!
-  "Send a JSON-RPC request and return a future-like promise that derefs
-   to the :result (or an ex-info for errors / closed subprocesses)."
-  [client method params]
-  (let [id     (swap! (:next-id client) inc)
-        line   (jrpc/request-line id method params)
-        p      (promise)]
-    (swap! (:pending client) assoc id {:promise p :method method})
-    (try
-      (write-line! (:writer client) line)
-      (catch Exception e
-        (swap! (:pending client) dissoc id)
-        (deliver p (ex-info "failed to write imsg request"
-                            {:type :imsg/write-failed :method method}
-                            e))))
-    p))
-
-(defn notify!
-  "Send a JSON-RPC notification (no response expected)."
-  [client method params]
-  (write-line! (:writer client) (jrpc/notification-line method params)))
-
-(defn stop! [client]
-  (when client
-    (try
-      (when-let [w (:writer client)]
-        (.close ^Writer w))
-      (catch Exception _ nil))
-    (try
-      (-destroy (:proc client))
-      (catch Exception _ nil))
-    (when-let [t (:reader-thread client)]
-      (try (.join ^Thread t 1000) (catch Exception _ nil)))))
+(defn request! [client method params] (-request! client method params))
+(defn notify!  [client method params] (-notify!  client method params))
+(defn stop!    [client] (when client (-stop! client)))
+(defn alive?   [client] (and client (-alive?-client client)))
