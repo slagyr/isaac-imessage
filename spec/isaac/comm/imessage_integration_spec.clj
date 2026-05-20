@@ -35,7 +35,7 @@
       (should= {:ok true} (comm/send! instance {:content "hello"}))
       (should= [{:method "send"
                  :params {:to "+15551234567" :text "hello" :service "e:me"}}]
-               @calls)))
+               (filterv #(= "send" (:method %)) @calls))))
 
   (it "prefers per-record target and service over defaults"
     (let [[client calls] (fake-client+calls)
@@ -49,4 +49,4 @@
                                                 :target "+15550000000"}))
       (should= [{:method "send"
                  :params {:to "+15550000000" :text "hello" :service "e:other"}}]
-               @calls))))
+               (filterv #(= "send" (:method %)) @calls)))))

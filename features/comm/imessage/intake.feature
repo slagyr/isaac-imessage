@@ -1,8 +1,10 @@
-Feature: iMessage inbox poll → work item
-  Polling the imessage inbox reads new rows from the message source,
-  drops self-messages, routes each remaining row to an Isaac session,
-  and advances the watermark so the next poll skips them. Scenarios
-  install an in-memory MessageSource via the imessage source seam.
+Feature: iMessage inbox → work item
+  imsg pushes a JSON-RPC `message` notification for each new
+  inbound row in chat.db. The comm's notification handler drops
+  self-messages, applies the allow-from filter, builds an Isaac
+  work-item, and dispatches a turn. Scenarios install a
+  FakeImsgClient so we can feed notifications directly via the
+  `imessage source has rows` step.
 
   Background:
     Given default iMessage setup
@@ -15,7 +17,6 @@ Feature: iMessage inbox poll → work item
     Then the polled work items are:
       | session-key | input    | origin.handle | origin.chat-guid | origin.message-rowid |
       | imessage:T1 | hi there | +15551234567  | T1               | 1                    |
-    And the imessage watermark is 1
 
   Scenario: self-messages do not produce work items
     Given the imessage source has rows:
@@ -26,31 +27,14 @@ Feature: iMessage inbox poll → work item
     Then the polled work items are:
       | session-key | input        | origin.message-rowid |
       | imessage:T1 | they sent it | 6                    |
-    And the imessage watermark is 6
 
-  Scenario: multiple inbound rows produce work items in rowid order
+  Scenario: multiple inbound rows produce one work item each
     Given the imessage source has rows:
       | rowid | chat-guid | handle       | text   | from-me |
-      | 11    | T1        | +15551234567 | second | 0       |
       | 10    | T1        | +15551234567 | first  | 0       |
+      | 11    | T1        | +15551234567 | second | 0       |
     When the imessage inbox is polled
     Then the polled work items are:
       | #index | input  | origin.message-rowid |
       | 0      | first  | 10                   |
       | 1      | second | 11                   |
-    And the imessage watermark is 11
-
-  Scenario: previously seen rows are skipped on the next poll
-    Given the EDN isaac file "comms/imessage/state.edn" exists with:
-      | path                    | value |
-      | watermark.message-rowid | 10    |
-    And the imessage source has rows:
-      | rowid | chat-guid | handle       | text     | from-me |
-      | 8     | T1        | +15551234567 | older    | 0       |
-      | 10    | T1        | +15551234567 | seen     | 0       |
-      | 11    | T1        | +15551234567 | brand new | 0      |
-    When the imessage inbox is polled
-    Then the polled work items are:
-      | input     | origin.message-rowid |
-      | brand new | 11                   |
-    And the imessage watermark is 11
