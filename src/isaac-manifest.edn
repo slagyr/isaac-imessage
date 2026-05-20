@@ -11,6 +11,8 @@
                                                  :description "Path to the imsg binary (e.g. /usr/local/bin/imsg). Defaults to whatever is on PATH; set explicitly when the running shell PATH doesn't include /usr/local/bin (common for headless processes)."}
                                 :message-cap    {:type        :int
                                                  :description "Chunk reply text into separate sends above this character count. Defaults to 2000."}
+                                :max-chunks     {:type        :int
+                                                 :description "Hard cap on chunks a single reply produces. Above the cap the tail is dropped with a notice. Defaults to 3 — long replies become 3 messages, not 50."}
                                 :allow-from     {:type        :seq
                                                  :spec        {:type :string}
                                                  :description "Inbound allowlist of iMessage handles (phone numbers or emails). nil/missing = no filter; empty list = fail-closed (drops everything)."}}}}}

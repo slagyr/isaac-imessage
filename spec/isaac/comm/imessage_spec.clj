@@ -92,7 +92,34 @@
       (should (str/includes? (:soul-prepend req) "\"chat_guid\":\"T1\""))
       (should (str/includes? (:soul-prepend req) "\"handle\":\"+15551234567\""))
       (should (str/includes? (:soul-prepend req) "\"provider\":\"imessage\""))
-      (should (str/includes? (:soul-prepend req) "\"was_mentioned\":false")))))
+      (should (str/includes? (:soul-prepend req) "\"was_mentioned\":false"))))
+
+  (it "instructs the LLM to keep iMessage replies brief"
+    (let [req (sut/dispatch-request
+                {:session-key "imessage:T1"
+                 :input       "hi"
+                 :origin      {:kind :imessage :chat-guid "T1" :handle "+15551234567"}})]
+      (should (str/includes? (:soul-prepend req) "iMessage"))
+      (should (str/includes? (:soul-prepend req) "brief")))))
+
+(describe "iMessage cap-chunks"
+
+  (it "passes through when chunks ≤ max-chunks"
+    (should= ["a" "b" "c"] (sut/cap-chunks ["a" "b" "c"] 3))
+    (should= ["a" "b"]     (sut/cap-chunks ["a" "b"] 3)))
+
+  (it "passes through when max-chunks is nil"
+    (should= ["a" "b" "c" "d"] (sut/cap-chunks ["a" "b" "c" "d"] nil)))
+
+  (it "drops the tail and replaces with a notice when over the cap"
+    (let [result (sut/cap-chunks ["a" "b" "c" "d" "e"] 3)]
+      (should= 3 (count result))
+      (should= ["a" "b"] (vec (take 2 result)))
+      (should (str/includes? (nth result 2) "3 more chunk"))
+      (should (str/includes? (nth result 2) "truncated"))))
+
+  (it "returns empty when max-chunks is 0"
+    (should= [] (sut/cap-chunks ["a" "b"] 0))))
 
 (describe "iMessage reply text"
 
