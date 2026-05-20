@@ -4,6 +4,7 @@
     [clojure.string :as str]
     [isaac.api :as api]
     [isaac.comm :as comm]
+    [isaac.comm.delivery.queue :as queue]
     [isaac.comm.imessage.apple-script :as apple-script]
     [isaac.comm.imessage.chat-db :as chat-db]
     [isaac.comm.imessage.inbox :as inbox]
@@ -153,11 +154,11 @@
    (mapv #(dispatch-work-item! state-dir % comm-impl) work-items)))
 
 (defn result->reply-text [result]
-  (or (get-in result [:message :content])
+  (or (get-in result [:response :message :content])
+      (get-in result [:message :content])
       (:content result)
       (:message result)
       (:message (:error result))
-      (:message result)
       (when-let [error (:error result)]
         (if (keyword? error) (name error) (str error)))
       ""))
@@ -194,6 +195,25 @@
            :service service
            :target  (get-in work-item [:origin :handle])})
         (chunk-reply-text (result->reply-text result))))
+
+(defn dispatch-and-enqueue-reply!
+  "Dispatches the work item, formats the result as reply text, chunks it
+   per max-chars, and enqueues each chunk as a delivery record for the
+   comm/delivery worker to send. Mirrors the queue-aware path the
+   isaac-imessage-5dbp bean will eventually consolidate around."
+  ([state-dir work-item comm-impl]
+   (dispatch-and-enqueue-reply! state-dir work-item comm-impl 2000))
+  ([state-dir work-item comm-impl max-chars]
+   (let [result   (dispatch-work-item! state-dir work-item comm-impl)
+         reply    (result->reply-text result)
+         chunks   (chunk-reply-text reply max-chars)
+         handle   (get-in work-item [:origin :handle])
+         records  (mapv (fn [chunk]
+                          (queue/enqueue! {:comm    "imessage"
+                                           :target  handle
+                                           :content chunk}))
+                        chunks)]
+     {:dispatch-result result :records records})))
 
 (defn dispatch-and-reply-work-item!
   ([state-dir work-item service]

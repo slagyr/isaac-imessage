@@ -103,15 +103,20 @@
     (let [cfg       (config/load-config {:home (g/get :state-dir)})
           _         (config/set-snapshot! cfg)
           source    (imessage-source)
-          opts      (select-keys (imessage-slice) [:allow-from])
+          slice     (imessage-slice)
+          opts      (select-keys slice [:allow-from])
           {:keys [work-items state]} (imessage/poll-work-items! source (imessage-state-path) opts)
           state-dir (g/get :state-dir)
-          comm-impl (comm-registry/comm-for "imessage")
-          results   (mapv #(imessage/dispatch-work-item! state-dir % comm-impl) work-items)]
-      (g/assoc! :imessage-work-items work-items)
-      (g/assoc! :imessage-state state)
-      (g/assoc! :imessage-dispatch-results results)
-      (g/assoc! :llm-request (grover/last-request)))))
+          runtime-state-dir (str state-dir "/.isaac")
+          max-chars (or (:message-cap slice) 2000)
+          comm-impl (comm-registry/comm-for "imessage")]
+      (system/with-nested-system {:state-dir runtime-state-dir}
+        (let [results (mapv #(imessage/dispatch-and-enqueue-reply! state-dir % comm-impl max-chars)
+                            work-items)]
+          (g/assoc! :imessage-work-items work-items)
+          (g/assoc! :imessage-state state)
+          (g/assoc! :imessage-dispatch-results results)
+          (g/assoc! :llm-request (grover/last-request)))))))
 
 (defn imessage-source-raises-then-succeeds [n]
   (reset! source-raise-budget n))
@@ -161,6 +166,9 @@
                          (re-matches #":\S+" raw)  (keyword (subs raw 1))
                          :else                     raw)]
           (g/should= expected actual))))))
+
+(defn imessage-message-cap-is [n]
+  (update-imessage-slice! #(assoc % :message-cap n)))
 
 (defn imessage-allow-from-is [value]
   (let [parts (->> (str/split (or value "") #",")
@@ -286,6 +294,11 @@
   "Asserts the iMessage Comm's internal state map matches each row
    (dotted path -> value). Reads via imessage/state. Existing
    'the comm X exists with state:' step only reads telly comms.")
+
+(defgiven "comms.imessage.message-cap is {n:int}" isaac.comm.imessage.imessage-steps/imessage-message-cap-is
+  "Updates the registered comm's slice with :message-cap so
+   dispatch-and-enqueue-reply! chunks the LLM response at that
+   boundary.")
 
 (defgiven "comms.imessage.allow-from is {value:string}" isaac.comm.imessage.imessage-steps/imessage-allow-from-is
   "Updates the registered imessage comm's slice with :allow-from

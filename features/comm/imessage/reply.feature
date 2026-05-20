@@ -1,4 +1,3 @@
-@wip
 Feature: iMessage end-to-end reply
   An inbound iMessage triggers an Isaac turn, the crew produces a
   response, the response is enqueued as a delivery record (chunked
@@ -34,7 +33,7 @@ Feature: iMessage end-to-end reply
     When the imessage inbox is polled and dispatched
     And the imessage delivery worker ticks
     Then the imessage runner was invoked with:
-      | #index | body                |
-      | 0      | one two three four  |
-      | 1      | five six seven      |
-      | 2      | eight nine ten      |
+      | body                |
+      | one two three four  |
+      | five six seven      |
+      | eight nine ten      |
