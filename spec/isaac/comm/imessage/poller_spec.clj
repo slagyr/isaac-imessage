@@ -25,7 +25,7 @@
                     isaac.comm.imessage.chat-db/message-source (fn [store]
                                                                  (assoc @captured :store store)
                                                                  :source)
-                    isaac.comm.imessage/poll-work-items! (fn [source state-path]
+                    isaac.comm.imessage/poll-work-items! (fn [source state-path & _opts]
                                                            {:work-items [{:session-key "imessage:chat-guid-1"
                                                                           :input "hello"
                                                                           :origin {:kind :imessage}}]

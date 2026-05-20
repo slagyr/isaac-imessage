@@ -1,4 +1,3 @@
-@wip
 Feature: iMessage inbound sender filtering
   Inbound polling drops messages from senders not in
   comms.imessage.allow-from. Allow-from is fail-closed: an empty

@@ -1,5 +1,6 @@
 (ns isaac.comm.imessage.imessage-steps
   (:require
+    [clojure.string :as str]
     [gherclj.core :as g :refer [defgiven defwhen defthen helper!]]
     [isaac.comm.delivery.worker :as worker]
     [isaac.comm.imessage :as imessage]
@@ -65,12 +66,29 @@
             (vec (filter #(> (:message-rowid %) floor) rows))
             rows))))))
 
+(defn- imessage-slice []
+  (or (some-> (g/get :imessage-instance) imessage/state :slice) {}))
+
 (defn imessage-inbox-is-polled []
   (binding [fs/*fs* (or (g/get :mem-fs) fs/*fs*)]
     (let [source (imessage-source)
-          result (imessage/poll-work-items! source (imessage-state-path))]
+          opts   (select-keys (imessage-slice) [:allow-from])
+          result (imessage/poll-work-items! source (imessage-state-path) opts)]
       (g/assoc! :imessage-work-items (:work-items result))
       (g/assoc! :imessage-state      (:state result)))))
+
+(defn- update-imessage-slice! [updater]
+  (when-let [instance (g/get :imessage-instance)]
+    (configurator/on-config-change! instance
+                                    (:slice (imessage/state instance))
+                                    (updater (:slice (imessage/state instance))))))
+
+(defn imessage-allow-from-is [value]
+  (let [parts (->> (str/split (or value "") #",")
+                   (map str/trim)
+                   (remove str/blank?)
+                   vec)]
+    (update-imessage-slice! #(assoc % :allow-from parts))))
 
 (defn- parse-long-or-zero [s]
   (or (when (string? s) (parse-long s)) 0))
@@ -156,6 +174,12 @@
    real normalize + fetch path without a real DB. Row columns are
    the raw SQLite shape: rowid, chat_guid, handle_id, is_from_me,
    text, date.")
+
+(defgiven "comms.imessage.allow-from is {value:string}" isaac.comm.imessage.imessage-steps/imessage-allow-from-is
+  "Updates the registered imessage comm's slice with :allow-from
+   parsed from a comma-separated string. Subsequent 'the imessage
+   inbox is polled' reads this slice and passes :allow-from down
+   to poll-work-items!. Empty value parses to [] (fail-closed).")
 
 (defwhen "the imessage inbox is polled from chat.db" isaac.comm.imessage.imessage-steps/imessage-inbox-is-polled-from-chat-db
   "Calls imessage/poll-work-items-from-db! with chat-db/shell-store

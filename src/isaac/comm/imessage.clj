@@ -8,7 +8,8 @@
     [isaac.comm.imessage.inbox :as inbox]
     [isaac.comm.imessage.routing :as routing]
     [isaac.comm.imessage.state :as state]
-    [isaac.configurator :as configurator]))
+    [isaac.configurator :as configurator]
+    [isaac.logger :as log]))
 
 (defn default-chat-db-path
   ([] (default-chat-db-path (System/getProperty "user.home")))
@@ -48,17 +49,42 @@
     (write-state! path (:state result))
     result))
 
-(defn poll-routed! [source path]
-  (let [current (read-state path)
-        polled  (inbox/poll! source current)
-        routed  (reduce (fn [{:keys [state messages]} message]
-                          (let [{:keys [session-key state]} (routing/ensure-session state (:chat-guid message) (:handle message))]
-                            {:state    state
-                             :messages (conj messages (assoc message :session-key session-key))}))
-                        {:state (:state polled) :messages []}
-                        (:messages polled))]
-    (write-state! path (:state routed))
-    routed))
+(defn- allowed? [allow-from handle]
+  ;; nil = no filter; vector (even empty) = fail-closed allowlist
+  (cond
+    (nil? allow-from) true
+    (some #(= % handle) allow-from) true
+    :else false))
+
+(defn- drop-disallowed [allow-from messages]
+  (if (nil? allow-from)
+    messages
+    (reduce (fn [acc msg]
+              (if (allowed? allow-from (:handle msg))
+                (conj acc msg)
+                (do
+                  (log/debug :imessage.intake/drop-sender
+                             :handle (:handle msg)
+                             :chat-guid (:chat-guid msg)
+                             :message-rowid (:message-rowid msg))
+                  acc)))
+            []
+            messages)))
+
+(defn poll-routed!
+  ([source path] (poll-routed! source path {}))
+  ([source path {:keys [allow-from]}]
+   (let [current  (read-state path)
+         polled   (inbox/poll! source current)
+         filtered (drop-disallowed allow-from (:messages polled))
+         routed   (reduce (fn [{:keys [state messages]} message]
+                            (let [{:keys [session-key state]} (routing/ensure-session state (:chat-guid message) (:handle message))]
+                              {:state    state
+                               :messages (conj messages (assoc message :session-key session-key))}))
+                          {:state (:state polled) :messages []}
+                          filtered)]
+     (write-state! path (:state routed))
+     routed)))
 
 (defn- ->work-item [message]
   {:session-key (:session-key message)
@@ -69,20 +95,24 @@
                  :message-rowid (:message-rowid message)
                  :sent-at       (:sent-at message)}})
 
-(defn poll-work-items! [source path]
-  (let [routed (poll-routed! source path)]
-    {:work-items (mapv ->work-item (:messages routed))
-     :state      (:state routed)}))
+(defn poll-work-items!
+  ([source path] (poll-work-items! source path {}))
+  ([source path opts]
+   (let [routed (poll-routed! source path opts)]
+     {:work-items (mapv ->work-item (:messages routed))
+      :state      (:state routed)})))
 
 (defn poll-work-items-from-db!
-  ([db-path state-path]
+  ([db-path state-path] (poll-work-items-from-db! db-path state-path {}))
+  ([db-path state-path opts]
    (let [store  (chat-db/shell-store db-path)
          source (chat-db/message-source store)
-         result (poll-work-items! source state-path)]
+         result (poll-work-items! source state-path opts)]
      (assoc result :db-path db-path :state-path state-path)))
   ([]
    (poll-work-items-from-db! (default-chat-db-path)
-                             (default-state-path))))
+                             (default-state-path)
+                             {})))
 
 (defn dispatch-request [work-item]
   {:session-key (:session-key work-item)
