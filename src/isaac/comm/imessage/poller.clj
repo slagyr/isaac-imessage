@@ -1,18 +1,15 @@
 (ns isaac.comm.imessage.poller
   (:require
-    [isaac.comm.imessage :as imessage]
     [isaac.logger :as log]))
 
 (defn- sleep-ms [ms]
   (Thread/sleep ms))
 
-(defn run-once! [{:keys [isaac-home db-path state-path drain-fn]
-                  :or   {drain-fn imessage/drain-once!}}]
+(defn run-once! [{:keys [isaac-home db-path state-path drain-fn]}]
   (drain-fn isaac-home db-path state-path))
 
 (defn start! [{:keys [isaac-home db-path state-path interval-ms drain-fn sleep-fn]
                :or   {interval-ms 1000
-                      drain-fn    imessage/drain-once!
                       sleep-fn    sleep-ms}}]
   (let [running?    (atom true)
         last-result (atom nil)

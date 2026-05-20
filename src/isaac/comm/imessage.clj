@@ -8,10 +8,13 @@
     [isaac.comm.imessage.apple-script :as apple-script]
     [isaac.comm.imessage.chat-db :as chat-db]
     [isaac.comm.imessage.inbox :as inbox]
+    [isaac.comm.imessage.poller :as poller]
     [isaac.comm.imessage.routing :as routing]
     [isaac.comm.imessage.state :as state]
+    [isaac.comm.registry :as comm-registry]
     [isaac.configurator :as configurator]
-    [isaac.logger :as log]))
+    [isaac.logger :as log]
+    [isaac.system :as system]))
 
 (defn default-chat-db-path
   ([] (default-chat-db-path (System/getProperty "user.home")))
@@ -249,6 +252,27 @@
                           (default-state-path)
                           service)))
 
+(declare state)
+
+(defn canonical-drain!
+  "The one-and-only inbound drain pipeline: poll chat.db (or any
+   MessageSource) → dispatch each work item → enqueue the reply
+   text (chunked per :message-cap) to comm/delivery/pending so the
+   delivery worker hands each chunk to the AppleScript runner.
+   Reads slice config (allow-from, message-cap) from the
+   registered imessage Comm instance."
+  [isaac-home db-path state-path]
+  (let [comm-impl (comm-registry/comm-for "imessage")
+        slice     (some-> comm-impl state :slice)
+        opts      (select-keys slice [:allow-from])
+        max-chars (or (:message-cap slice) 2000)
+        runtime-state-dir (str isaac-home "/.isaac")
+        {:keys [work-items] :as polled} (poll-work-items-from-db! db-path state-path opts)
+        results   (system/with-nested-system {:state-dir runtime-state-dir}
+                    (mapv #(dispatch-and-enqueue-reply! isaac-home % comm-impl max-chars)
+                          work-items))]
+    (assoc polled :results results)))
+
 (defn inspect-work-items-from-db! [db-path state-path service]
   (let [{:keys [work-items] :as result} (poll-work-items-from-db! db-path state-path)]
     (assoc result :reply-preview
@@ -256,6 +280,29 @@
                           {:session-key (:session-key item)
                            :records     (preview-reply-records item {:message {:content (:input item)}} service)})
                         work-items))))
+
+(defn- stop-poller! [state*]
+  (when-let [runner (:poller-runner @state*)]
+    (when-let [running? (:running? runner)]
+      (reset! running? false))
+    (when-let [fut (:future runner)]
+      (future-cancel fut))
+    (swap! state* dissoc :poller-runner)))
+
+(defn- start-poller! [state* host slice]
+  (when (and (:poll-interval-ms slice)
+             (:state-dir host))
+    (let [user-home  (:user-home host (System/getProperty "user.home"))
+          db-path    (or (:db-path slice) (default-chat-db-path user-home))
+          state-path (str (:state-dir host) "/comms/imessage/state.edn")
+          runner     (poller/start! {:isaac-home  (:state-dir host)
+                                     :db-path     db-path
+                                     :state-path  state-path
+                                     :interval-ms (:poll-interval-ms slice)
+                                     :drain-fn    canonical-drain!})]
+      (swap! state* assoc :poller-runner runner)
+      (log/info :imessage.poller/started :interval-ms (:poll-interval-ms slice))
+      runner)))
 
 (deftype ImessageComm [host state*]
   comm/Comm
@@ -281,13 +328,26 @@
 
   configurator/Reconfigurable
   (on-startup! [_ slice]
-    (reset! state* {:host host :slice slice :status :started}))
+    (reset! state* {:host host :slice slice :status :started})
+    (start-poller! state* host slice))
   (on-config-change! [_ old-slice new-slice]
-    (if (nil? new-slice)
-      (reset! state* {:host host :slice nil :status :stopped :prior old-slice})
-      (swap! state* assoc :slice new-slice :status :changed :prior old-slice))))
+    (cond
+      (nil? new-slice)
+      (do (stop-poller! state*)
+          (reset! state* {:host host :slice nil :status :stopped :prior old-slice})
+          (log/info :imessage.poller/stopped))
 
-(defn make [host]
+      :else
+      (do
+        (when (not= (:poll-interval-ms old-slice) (:poll-interval-ms new-slice))
+          (stop-poller! state*)
+          (start-poller! state* host new-slice))
+        (swap! state* assoc :slice new-slice :status :changed :prior old-slice)))))
+
+(defn make
+  "Comm registry factory: builds an ImessageComm from host context.
+   host = {:state-dir <isaac-state-dir> :name <slot-key>}"
+  [host]
   (->ImessageComm host (atom {:host host :slice nil :status :new})))
 
 (defn imessage? [x]
