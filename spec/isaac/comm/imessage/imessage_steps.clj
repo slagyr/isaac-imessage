@@ -11,7 +11,9 @@
     [isaac.comm.imessage.state :as state]
     [isaac.comm.registry :as comm-registry]
     [isaac.configurator :as configurator]
+    [isaac.config.loader :as config]
     [isaac.fs :as fs]
+    [isaac.llm.api.grover :as grover]
     [isaac.session.session-steps :as session-steps]
     [isaac.step-tables :as match]
     [isaac.system :as system]))
@@ -27,7 +29,10 @@
   {:ok true})
 
 (defn default-imessage-setup []
-  (session-steps/in-memory-state "target/test-state")
+  ;; Don't blow away an already-initialized state dir (e.g. default Grover
+  ;; setup ran first to install LLM defaults). Otherwise initialize fresh.
+  (when-not (g/get :state-dir)
+    (session-steps/in-memory-state "target/test-state"))
   (reset! captured-runner-calls [])
   (reset! source-poll-count 0)
   (reset! source-raise-budget 0)
@@ -91,6 +96,22 @@
     (configurator/on-config-change! instance
                                     (:slice (imessage/state instance))
                                     (updater (:slice (imessage/state instance))))))
+
+(defn imessage-inbox-is-polled-and-dispatched []
+  (grover/clear-provider-requests!)
+  (binding [fs/*fs* (or (g/get :mem-fs) fs/*fs*)]
+    (let [cfg       (config/load-config {:home (g/get :state-dir)})
+          _         (config/set-snapshot! cfg)
+          source    (imessage-source)
+          opts      (select-keys (imessage-slice) [:allow-from])
+          {:keys [work-items state]} (imessage/poll-work-items! source (imessage-state-path) opts)
+          state-dir (g/get :state-dir)
+          comm-impl (comm-registry/comm-for "imessage")
+          results   (mapv #(imessage/dispatch-work-item! state-dir % comm-impl) work-items)]
+      (g/assoc! :imessage-work-items work-items)
+      (g/assoc! :imessage-state state)
+      (g/assoc! :imessage-dispatch-results results)
+      (g/assoc! :llm-request (grover/last-request)))))
 
 (defn imessage-source-raises-then-succeeds [n]
   (reset! source-raise-budget n))
@@ -232,6 +253,13 @@
    real normalize + fetch path without a real DB. Row columns are
    the raw SQLite shape: rowid, chat_guid, handle_id, is_from_me,
    text, date.")
+
+(defwhen "the imessage inbox is polled and dispatched" isaac.comm.imessage.imessage-steps/imessage-inbox-is-polled-and-dispatched
+  "Polls the in-memory source, dispatches each work item via
+   imessage/dispatch-work-item! (which triggers an api/dispatch!
+   into Isaac's turn machinery), and captures grover/last-request
+   into :llm-request so 'the system prompt contains' can assert on
+   the trusted-block soul-prepend. Shared with reply.feature.")
 
 (defgiven "the imessage source raises on the next {n:int} polls then succeeds" isaac.comm.imessage.imessage-steps/imessage-source-raises-then-succeeds
   "Sets a budget of N raise-on-poll responses. Once exhausted, the

@@ -123,20 +123,25 @@
       (should= [] (:work-items (sut/poll-work-items! source path)))))
 
   (it "builds an Isaac dispatch request from a work item"
-    (should= {:session-key "imessage:chat-guid-1"
-              :input       "hello"
-              :origin      {:kind          :imessage
-                            :chat-guid     "chat-guid-1"
-                            :handle        "+15551234567"
-                            :message-rowid 42
-                            :sent-at       1234567890}}
-             (sut/dispatch-request {:session-key "imessage:chat-guid-1"
-                                    :input       "hello"
-                                    :origin      {:kind          :imessage
-                                                  :chat-guid     "chat-guid-1"
-                                                  :handle        "+15551234567"
-                                                  :message-rowid 42
-                                                  :sent-at       1234567890}})))
+    (let [result (sut/dispatch-request {:session-key "imessage:chat-guid-1"
+                                        :input       "hello"
+                                        :origin      {:kind          :imessage
+                                                      :chat-guid     "chat-guid-1"
+                                                      :handle        "+15551234567"
+                                                      :message-rowid 42
+                                                      :sent-at       1234567890}})]
+      (should= {:session-key "imessage:chat-guid-1"
+                :input       "hello"
+                :origin      {:kind          :imessage
+                              :chat-guid     "chat-guid-1"
+                              :handle        "+15551234567"
+                              :message-rowid 42
+                              :sent-at       1234567890}}
+               (select-keys result [:session-key :input :origin]))
+      (should (string? (:soul-prepend result)))
+      (should (clojure.string/includes? (:soul-prepend result) "isaac.inbound_meta.v1"))
+      (should (clojure.string/includes? (:soul-prepend result) "\"chat_guid\":\"chat-guid-1\""))
+      (should (clojure.string/includes? (:soul-prepend result) "\"handle\":\"+15551234567\""))))
 
   (it "creates a session before dispatch when one does not exist"
     (let [calls (atom [])
@@ -152,16 +157,20 @@
                                           {:ok true})]
         (should= {:ok true}
                  (sut/dispatch-work-item! "/tmp/isaac-home" work-item))
-        (should= [[:create "/tmp/isaac-home"
-                   "imessage:chat-guid-1"
-                   {:origin {:kind :imessage :chat-guid "chat-guid-1" :handle "+15551234567"}
-                    :chatType "direct"
-                    :channel "imessage"}]
-                  [:dispatch "/tmp/isaac-home"
-                   {:session-key "imessage:chat-guid-1"
+        (let [[create-call dispatch-call] @calls]
+          (should= [:create "/tmp/isaac-home"
+                    "imessage:chat-guid-1"
+                    {:origin {:kind :imessage :chat-guid "chat-guid-1" :handle "+15551234567"}
+                     :chatType "direct"
+                     :channel "imessage"}]
+                   create-call)
+          (should= [:dispatch "/tmp/isaac-home"]
+                   (take 2 dispatch-call))
+          (should= {:session-key "imessage:chat-guid-1"
                     :input "hello"
-                    :origin {:kind :imessage :chat-guid "chat-guid-1" :handle "+15551234567"}}]]
-                 @calls))))
+                    :origin {:kind :imessage :chat-guid "chat-guid-1" :handle "+15551234567"}}
+                   (select-keys (nth dispatch-call 2) [:session-key :input :origin]))
+          (should (string? (:soul-prepend (nth dispatch-call 2))))))))
 
   (it "dispatches without creating a session when one already exists"
     (let [calls (atom [])
@@ -177,17 +186,19 @@
                                           {:ok true})]
         (should= {:ok true}
                  (sut/dispatch-work-item! "/tmp/isaac-home" work-item))
-        (should= [[:dispatch "/tmp/isaac-home"
-                   {:session-key "imessage:chat-guid-1"
+        (let [[dispatch-call] @calls]
+          (should= [:dispatch "/tmp/isaac-home"] (take 2 dispatch-call))
+          (should= {:session-key "imessage:chat-guid-1"
                     :input "hello"
-                    :origin {:kind :imessage :chat-guid "chat-guid-1" :handle "+15551234567"}}]]
-                 @calls))))
+                    :origin {:kind :imessage :chat-guid "chat-guid-1" :handle "+15551234567"}}
+                   (select-keys (nth dispatch-call 2) [:session-key :input :origin]))
+          (should (string? (:soul-prepend (nth dispatch-call 2))))))))
 
   (it "dispatches a batch of work items in order"
     (let [calls (atom [])
           items [{:session-key "imessage:chat-1" :input "hello" :origin {:kind :imessage}}
                  {:session-key "imessage:chat-2" :input "there" :origin {:kind :imessage}}]]
-      (with-redefs [sut/dispatch-work-item! (fn [state-dir item]
+      (with-redefs [sut/dispatch-work-item! (fn [state-dir item & _]
                                               (swap! calls conj [state-dir (:session-key item)])
                                               {:session-key (:session-key item) :ok true})]
         (should= [{:session-key "imessage:chat-1" :ok true}
