@@ -39,6 +39,7 @@ Add `comms.imessage` to your `~/.isaac/config/isaac.edn`:
 
 ```clojure
 {:comms {:imessage {:service          "iMessage"
+                    :db-path          "/Users/zane/Library/Messages/chat.db"
                     :poll-interval-ms 1500
                     :allow-from       ["+15551234567" "friend@icloud.com"]}}}
 ```
@@ -46,8 +47,12 @@ Add `comms.imessage` to your `~/.isaac/config/isaac.edn`:
 - `:service` — Messages service name. Almost always `"iMessage"`;
   use `"SMS"` only if you specifically want SMS over a paired
   phone.
+- `:db-path` — absolute path to the Messages chat database.
+  Required to start the inbound poller; omitting it leaves the
+  poller off (handy for non-Mac dev, and a guard so tests can't
+  accidentally read a real chat.db).
 - `:poll-interval-ms` — chat.db poll cadence. Sub-second is
-  wasteful; 1000–5000 is sensible.
+  wasteful; 1000–5000 is sensible. Required to start the poller.
 - `:allow-from` — phone numbers / emails (string allowlist). The
   poller drops messages from senders not in this list and logs
   `:imessage.intake/drop-sender` at debug. **Fail-closed**: an

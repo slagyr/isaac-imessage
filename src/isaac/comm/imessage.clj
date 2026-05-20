@@ -290,13 +290,16 @@
     (swap! state* dissoc :poller-runner)))
 
 (defn- start-poller! [state* host slice]
+  ;; Auto-start gates on poll-interval-ms AND db-path being present.
+  ;; Requiring db-path keeps tests from accidentally polling the real
+  ;; ~/Library/Messages/chat.db. Operators set it explicitly in config
+  ;; (typically /Users/<you>/Library/Messages/chat.db).
   (when (and (:poll-interval-ms slice)
+             (:db-path slice)
              (:state-dir host))
-    (let [user-home  (:user-home host (System/getProperty "user.home"))
-          db-path    (or (:db-path slice) (default-chat-db-path user-home))
-          state-path (str (:state-dir host) "/comms/imessage/state.edn")
+    (let [state-path (str (:state-dir host) "/comms/imessage/state.edn")
           runner     (poller/start! {:isaac-home  (:state-dir host)
-                                     :db-path     db-path
+                                     :db-path     (:db-path slice)
                                      :state-path  state-path
                                      :interval-ms (:poll-interval-ms slice)
                                      :drain-fn    canonical-drain!})]
