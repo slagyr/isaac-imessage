@@ -13,7 +13,7 @@ Feature: iMessage comm lifecycle
   Scenario: comm activates when comms.imessage config is present
     Given the EDN isaac file "config/isaac.edn" exists with:
       | path                   | value    |
-      | comms.imessage.service | iMessage |
+      | comms.imessage.imsg/service | iMessage |
     When the Isaac process is started
     Then the comm "imessage" exists with state:
       | path | value |
@@ -24,7 +24,7 @@ Feature: iMessage comm lifecycle
   Scenario: comm is removed when comms.imessage config is removed
     Given the EDN isaac file "config/isaac.edn" exists with:
       | path                   | value    |
-      | comms.imessage.service | iMessage |
+      | comms.imessage.imsg/service | iMessage |
     And the Isaac server is started
     When config is updated:
       | path           | value   |
@@ -35,14 +35,14 @@ Feature: iMessage comm lifecycle
   Scenario: a config change updates the live comm without restart
     Given the EDN isaac file "config/isaac.edn" exists with:
       | path                       | value    |
-      | comms.imessage.service     | iMessage |
-      | comms.imessage.message-cap | 2000     |
+      | comms.imessage.imsg/service     | iMessage |
+      | comms.imessage.imsg/message-cap | 2000     |
     And the Isaac server is started
     When config is updated:
       | path                       | value |
-      | comms.imessage.message-cap | 500   |
+      | comms.imessage.imsg/message-cap | 500   |
     And the isaac config is reloaded
     Then the imessage comm has state:
       | path                | value    |
       | status              | :changed |
-      | slice.message-cap   | 500      |
+      | slice.imsg/message-cap | 500      |

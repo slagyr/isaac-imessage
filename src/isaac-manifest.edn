@@ -1,18 +1,18 @@
 {:id      :isaac.comm.imessage
  :version "0.1.0"
  :comm    {:imessage {:factory isaac.comm.imessage/make
-                      :schema  {:service        {:type        :string
-                                                 :description "Messages service name passed through to imsg (\"iMessage\" or \"SMS\"). Defaults to iMessage."}
-                                :default-target {:type        :string
-                                                 :description "Fallback handle for outbound records that don't carry a :target. Rarely needed."}
-                                :db-path        {:type        :string
-                                                 :description "Absolute path to Messages chat.db (typically /Users/<you>/Library/Messages/chat.db). Required to spawn the imsg subprocess; omitting it leaves the comm off so tests don't accidentally hit a real chat.db."}
-                                :imsg-bin       {:type        :string
-                                                 :description "Path to the imsg binary (e.g. /usr/local/bin/imsg). Defaults to whatever is on PATH; set explicitly when the running shell PATH doesn't include /usr/local/bin (common for headless processes)."}
-                                :message-cap    {:type        :int
-                                                 :description "Chunk reply text into separate sends above this character count. Defaults to 2000."}
-                                :max-chunks     {:type        :int
-                                                 :description "Hard cap on chunks a single reply produces. Above the cap the tail is dropped with a notice. Defaults to 3 — long replies become 3 messages, not 50."}
-                                :allow-from     {:type        :seq
-                                                 :spec        {:type :string}
-                                                 :description "Inbound allowlist of iMessage handles (phone numbers or emails). nil/missing = no filter; empty list = fail-closed (drops everything)."}}}}}
+                      :schema  {:imsg/service        {:type        :string
+                                                      :description "Messages service name passed through to imsg (\"iMessage\" or \"SMS\"). Defaults to iMessage."}
+                                :imsg/default-target {:type        :string
+                                                      :description "Fallback handle for outbound records that don't carry a :target. Rarely needed."}
+                                :imsg/db-path        {:type        :string
+                                                      :description "Absolute path to Messages chat.db (typically /Users/<you>/Library/Messages/chat.db). Required to spawn the imsg subprocess; omitting it leaves the comm off so tests don't accidentally hit a real chat.db."}
+                                :imsg/bin            {:type        :string
+                                                      :description "Path to the imsg binary (e.g. /usr/local/bin/imsg). Defaults to whatever is on PATH; set explicitly when the running shell PATH doesn't include /usr/local/bin (common for headless processes)."}
+                                :imsg/message-cap    {:type        :int
+                                                      :description "Chunk reply text into separate sends above this character count. Defaults to 2000."}
+                                :imsg/max-chunks     {:type        :int
+                                                      :description "Hard cap on chunks a single reply produces. Above the cap the tail is dropped with a notice. Defaults to 3 — long replies become 3 messages, not 50."}
+                                :imsg/allow-from     {:type        :seq
+                                                      :spec        {:type :string}
+                                                      :description "Inbound allowlist of iMessage handles (phone numbers or emails). nil/missing = no filter; empty list = fail-closed (drops everything)."}}}}}

@@ -38,33 +38,43 @@ sends and the chat.db is owned by the GUI user.
 Add `comms.imessage` to your `~/.isaac/config/isaac.edn`:
 
 ```clojure
-{:comms {:imessage {:service          "iMessage"
-                    :db-path          "/Users/zane/Library/Messages/chat.db"
-                    :poll-interval-ms 1500
-                    :allow-from       ["+15551234567" "friend@icloud.com"]}}}
+{:comms {:imessage {:imsg/service     "iMessage"
+                    :imsg/db-path     "/Users/zane/Library/Messages/chat.db"
+                    :imsg/bin         "/usr/local/bin/imsg"
+                    :imsg/allow-from  ["+15551234567" "friend@icloud.com"]}}}
 ```
 
-- `:service` — Messages service name. Almost always `"iMessage"`;
-  use `"SMS"` only if you specifically want SMS over a paired
-  phone.
-- `:db-path` — absolute path to the Messages chat database.
-  Required to start the inbound poller; omitting it leaves the
-  poller off (handy for non-Mac dev, and a guard so tests can't
-  accidentally read a real chat.db).
-- `:poll-interval-ms` — chat.db poll cadence. Sub-second is
-  wasteful; 1000–5000 is sensible. Required to start the poller.
-- `:allow-from` — phone numbers / emails (string allowlist). The
-  poller drops messages from senders not in this list and logs
-  `:imessage.intake/drop-sender` at debug. **Fail-closed**: an
-  empty list drops everything; omit `:allow-from` to skip
-  filtering entirely.
+All slice keys live in the `:imsg/` keyword namespace so the comm
+config doesn't collide with anything Isaac (or another module)
+might inject into the same map.
+
+- `:imsg/service` — Messages service name. Almost always
+  `"iMessage"`; use `"SMS"` only if you specifically want SMS over
+  a paired phone.
+- `:imsg/db-path` — absolute path to the Messages chat database.
+  Required to spawn the imsg subprocess; omitting it leaves the
+  comm dormant (handy for non-Mac dev, and a guard so tests can't
+  accidentally hit a real chat.db).
+- `:imsg/bin` — path to the imsg binary. Defaults to whatever's
+  on `PATH`; set explicitly when the process launching isaac
+  doesn't see `/usr/local/bin` or `/opt/homebrew/bin` (common for
+  headless processes like launchd jobs).
+- `:imsg/allow-from` — phone numbers / emails (string allowlist).
+  Notifications from senders not in this list are dropped at
+  debug log level (`:imessage.intake/drop-sender`).
+  **Fail-closed**: an empty list drops everything; omit
+  `:imsg/allow-from` to skip filtering entirely.
 
 Optional:
 
-- `:default-target` — fallback handle for outbound records that
-  don't carry one. Rarely needed.
-- `:message-cap` — split replies above this character count into
-  multiple sends. Default 2000.
+- `:imsg/default-target` — fallback handle for outbound records
+  that don't carry their own `:target`. Rarely needed.
+- `:imsg/message-cap` — split replies above this character count
+  into multiple sends. Default 2000.
+- `:imsg/max-chunks` — hard cap on how many chunks a single reply
+  produces. Above the cap the tail is dropped with a truncation
+  notice so a runaway LLM response can't flood Messages. Default
+  3 (≈6000 chars total at the default `:imsg/message-cap`).
 
 ### 3. Verify the host
 

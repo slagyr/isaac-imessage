@@ -21,29 +21,25 @@
 
   (it "builds a Comm/Reconfigurable instance"
     (let [[client _] (fake-client+calls)
-          instance   (sut/make {:name "imessage-slot" :service "E:me" :imsg-client client})]
+          instance   (sut/make {:name "imessage-slot" :imsg-client client})]
       (should (sut/imessage? instance))
       (should (satisfies? comm/Comm instance))))
 
   (it "uses configured defaults when delivering a record"
     (let [[client calls] (fake-client+calls)
-          instance       (sut/make {:name "imessage-slot"
-                                    :service "E:me"
-                                    :default-target "+15551234567"
-                                    :imsg-client client})]
-      (configurator/on-startup! instance {:service "E:me"})
+          instance       (sut/make {:name "imessage-slot" :imsg-client client})]
+      (configurator/on-startup! instance {:imsg/service        "E:me"
+                                           :imsg/default-target "+15551234567"})
       (should= {:ok true} (comm/send! instance {:content "hello"}))
       (should= [{:method "send"
                  :params {:to "+15551234567" :text "hello" :service "e:me"}}]
                (filterv #(= "send" (:method %)) @calls))))
 
-  (it "prefers per-record target and service over defaults"
+  (it "prefers per-record target and service over slice defaults"
     (let [[client calls] (fake-client+calls)
-          instance       (sut/make {:name "imessage-slot"
-                                    :service "E:me"
-                                    :default-target "+15551234567"
-                                    :imsg-client client})]
-      (configurator/on-startup! instance {:service "E:me"})
+          instance       (sut/make {:name "imessage-slot" :imsg-client client})]
+      (configurator/on-startup! instance {:imsg/service        "E:me"
+                                           :imsg/default-target "+15551234567"})
       (should= {:ok true} (comm/send! instance {:content "hello"
                                                 :service "E:other"
                                                 :target "+15550000000"}))

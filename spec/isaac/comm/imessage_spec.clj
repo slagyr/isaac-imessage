@@ -38,7 +38,7 @@
 (describe "iMessage inbound filter (notification->work-item)"
 
   (let [allow ["+15551234567" "friend@icloud.com"]
-        slice (delay {:allow-from allow})
+        slice (delay {:imsg/allow-from allow})
         notif (fn [overrides]
                 {:method "message"
                  :params {:subscription 1
@@ -68,7 +68,7 @@
       (should= nil (sut/notification->work-item @slice (notif {:sender "+15559999999"}))))
 
     (it "drops everything when allow-from is empty (fail-closed)"
-      (should= nil (sut/notification->work-item {:allow-from []} (notif {}))))
+      (should= nil (sut/notification->work-item {:imsg/allow-from []} (notif {}))))
 
     (it "passes everything when allow-from is missing (no filter)"
       (let [item (sut/notification->work-item {} (notif {:sender "+15559999999"}))]
