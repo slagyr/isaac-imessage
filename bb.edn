@@ -32,4 +32,37 @@
                         "-f" "features"
                         "-s" "isaac.**-steps"
                         "-t" "~wip"
-                        *command-line-args*)}}}
+                        *command-line-args*)}
+
+  smoke    {:doc      "Sanity-check the local Mac for iMessage usage. Verifies osascript / sqlite3 are on PATH and tries a read of ~/Library/Messages/chat.db. Optional: pass a handle + message to actually send a test iMessage. Usage: bb smoke [<handle> <message>]"
+            :requires ([babashka.fs :as fs]
+                       [babashka.process :as p]
+                       [clojure.string :as str])
+            :task     (let [home       (System/getProperty "user.home")
+                            chat-db    (str home "/Library/Messages/chat.db")
+                            [handle & body-parts] *command-line-args*
+                            body       (when (seq body-parts) (str/join " " body-parts))
+                            check      (fn [label cmd]
+                                         (println "▸" label)
+                                         (try
+                                           (let [{:keys [exit out err]} (deref (p/process cmd {:out :string :err :string}))]
+                                             (if (zero? exit)
+                                               (println "  ✓ " (str/trim (or out "")))
+                                               (println "  ✗ exit=" exit "err=" (str/trim (or err "")))))
+                                           (catch Exception e
+                                             (println "  ✗" (.getMessage e)))))]
+                        (check "osascript on PATH" ["osascript" "-e" "return \"ok\""])
+                        (check "sqlite3 on PATH" ["sqlite3" "-version"])
+                        (println "▸ chat.db readable (requires Full Disk Access)")
+                        (if-not (fs/exists? chat-db)
+                          (println "  ✗ not found at" chat-db)
+                          (check "chat.db count" ["sqlite3" chat-db "SELECT COUNT(*) FROM message;"]))
+                        (if (and handle body)
+                          (do
+                            (println "▸ sending iMessage to" handle "(requires Automation permission for Messages)")
+                            (check "send" ["osascript" "-e"
+                                           (str "tell application \"Messages\"\n"
+                                                "  send \"" (str/replace body "\"" "\\\"") "\" "
+                                                "to buddy \"" handle "\" of service \"iMessage\"\n"
+                                                "end tell")]))
+                          (println "▸ skipping send (pass <handle> <message> args to exercise it)")))}}}
