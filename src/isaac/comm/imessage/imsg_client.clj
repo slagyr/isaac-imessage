@@ -92,14 +92,21 @@
       (doseq [[_id {:keys [promise]}] @(:pending client)]
         (deliver promise (ex-info "imsg subprocess closed"
                                   {:type :imsg/closed})))
-      (reset! (:pending client) {}))))
+      (reset! (:pending client) {})
+      ;; Notify the comm impl unless this is an intentional stop!.
+      (when (and (:on-disconnect client)
+                 (not @(:stopping? client)))
+        (log/error :imsg.client/disconnected)
+        (try ((:on-disconnect client))
+             (catch Exception e
+               (log/warn :imsg.client/disconnect-handler-failed :error (.getMessage e))))))))
 
 (defn- write-line! [^Writer writer line]
   (locking writer
     (.write writer ^String line)
     (.flush writer)))
 
-(defrecord SubprocessClient [proc writer pending next-id on-notification reader-thread]
+(defrecord SubprocessClient [proc writer pending next-id on-notification on-disconnect stopping? reader-thread]
   Client
   (-request! [_ method params]
     (let [id   (swap! next-id inc)
@@ -119,6 +126,7 @@
   (-alive?-client [_]
     (-alive? proc))
   (-stop! [_]
+    (reset! stopping? true)
     (try (.close ^Writer writer) (catch Exception _ nil))
     (try (-destroy proc) (catch Exception _ nil))
     (when reader-thread
@@ -131,12 +139,17 @@
      :bin             - imsg binary path (defaults to 'imsg' on PATH)
      :db-path         - optional --db argument
      :process         - inject a Subprocess directly (for tests)
-     :on-notification - (fn [{:method :params}]) for push notifications"
-  [{:keys [process on-notification] :as opts}]
+     :on-notification - (fn [{:method :params}]) for push notifications
+     :on-disconnect   - (fn []) called once when the subprocess exits
+                        unexpectedly (not via stop!). Used by the comm
+                        impl to mark the client dead and trigger
+                        reconnect."
+  [{:keys [process on-notification on-disconnect] :as opts}]
   (let [proc          (or process (spawn-imsg! opts))
         writer        (-stdin-writer proc)
         reader        (-stdout-reader proc)
-        client        (->SubprocessClient proc writer (atom {}) (atom 0) on-notification nil)
+        client        (->SubprocessClient proc writer (atom {}) (atom 0)
+                                          on-notification on-disconnect (atom false) nil)
         reader-thread (doto (Thread. ^Runnable #(read-loop! client reader)
                                      "imsg-client-reader")
                         (.setDaemon true)

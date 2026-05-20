@@ -225,6 +225,56 @@
     (catch Exception e
       (log/error :imsg.watch/subscribe-failed :error (.getMessage e)))))
 
+(declare ^:private spawn-client!)
+
+(def ^:private reconnect-delays-ms
+  "Exponential backoff for imsg subprocess respawns. Final entry is
+   used indefinitely until either the subprocess stays up or the
+   comm is torn down."
+  [1000 5000 30000 120000 600000])
+
+(defn- reconnect-delay-ms [attempt]
+  (nth reconnect-delays-ms (min attempt (dec (count reconnect-delays-ms)))))
+
+(defn- reconnect-loop! [comm-impl state*]
+  (loop [attempt 0]
+    (Thread/sleep (reconnect-delay-ms attempt))
+    (let [s (deref state*)]
+      (when (= :reconnecting (:status s))
+        (if-let [client (spawn-client! comm-impl (:host s) (:slice s))]
+          (do
+            (swap! state* assoc :imsg-client client :status :started)
+            (log/info :imsg.client/reconnected :attempt (inc attempt))
+            (subscribe-to-inbound! client))
+          (do
+            (log/warn :imsg.client/reconnect-failed :attempt (inc attempt))
+            (recur (inc attempt))))))))
+
+(defn- on-imsg-disconnect! [comm-impl state*]
+  ;; Only kick off a respawn job if we WERE :started (i.e. this is the
+  ;; first death notice). Reentrant calls during a reconnect attempt
+  ;; would otherwise spawn duplicate background threads.
+  (let [old (deref state*)]
+    (when (and (= :started (:status old))
+               (compare-and-set! state* old (assoc old :imsg-client nil :status :reconnecting)))
+      (future (reconnect-loop! comm-impl state*)))))
+
+(defn- state-atom [comm-impl]
+  (.-state* comm-impl))
+
+(defn- spawn-client! [comm-impl host slice]
+  (when (:db-path slice)
+    (try
+      (imsg-client/start! {:bin             (:imsg-bin slice)
+                           :db-path         (:db-path slice)
+                           :on-notification (fn [n] (on-imsg-notification! comm-impl n))
+                           :on-disconnect   (fn []  (on-imsg-disconnect! comm-impl (state-atom comm-impl)))})
+      (catch Exception e
+        (log/error :imsg.client/start-failed
+                   :error (.getMessage e)
+                   :imsg-bin (:imsg-bin slice))
+        nil))))
+
 (deftype ImessageComm [host state*]
   comm/Comm
   (on-turn-start [_ _ _] nil)
@@ -250,18 +300,10 @@
 
   configurator/Reconfigurable
   (on-startup! [this slice]
+    (reset! state* {:host host :slice slice :status :started :imsg-client nil})
     (let [client (or (:imsg-client host)
-                     (when (:db-path slice)
-                       (try
-                         (imsg-client/start! {:bin     (:imsg-bin slice)
-                                              :db-path (:db-path slice)
-                                              :on-notification (fn [n] (on-imsg-notification! this n))})
-                         (catch Exception e
-                           (log/error :imsg.client/start-failed
-                                      :error (.getMessage e)
-                                      :imsg-bin (:imsg-bin slice))
-                           nil))))]
-      (reset! state* {:host host :slice slice :status :started :imsg-client client})
+                     (spawn-client! this host slice))]
+      (swap! state* assoc :imsg-client client)
       (when client
         (subscribe-to-inbound! client))))
   (on-config-change! [_ old-slice new-slice]
@@ -269,6 +311,8 @@
       (nil? new-slice)
       (do (when-let [client (:imsg-client @state*)]
             (try (imsg-client/stop! client) (catch Exception _ nil)))
+          ;; :status :stopped lets any in-flight reconnect-loop exit
+          ;; (it checks for :reconnecting before each attempt).
           (reset! state* {:host host :slice nil :status :stopped :prior old-slice})
           (log/info :imsg.client/stopped))
 

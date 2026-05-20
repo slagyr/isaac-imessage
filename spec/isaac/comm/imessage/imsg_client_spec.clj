@@ -82,6 +82,26 @@
           (should-not= ::timeout v)
           (should (instance? Throwable v))))))
 
+  (context "disconnect"
+
+    (it "fires the on-disconnect callback when the subprocess closes unexpectedly"
+      (let [fired (atom false)
+            {:keys [proc]} (fake-process)
+            client (sut/start! {:process proc
+                                 :on-disconnect #(reset! fired true)})]
+        ;; Close the stdout side from the test's perspective — reader sees EOF.
+        (sut/-destroy proc)
+        (.join ^Thread (:reader-thread client) 1000)
+        (should @fired)))
+
+    (it "does NOT fire on-disconnect when stop! is called explicitly"
+      (let [fired (atom false)
+            {:keys [proc]} (fake-process)
+            client (sut/start! {:process proc
+                                 :on-disconnect #(reset! fired true)})]
+        (sut/stop! client)
+        (should-not @fired))))
+
   (context "notifications"
 
     (it "routes :method-only messages to the notification handler"
