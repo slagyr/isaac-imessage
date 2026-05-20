@@ -1,6 +1,6 @@
 # isaac-imessage
 
-[![Spec](https://github.com/slagyr/isaac-imessage/actions/workflows/spec.yml/badge.svg)](https://github.com/slagyr/isaac-imessage/actions/workflows/spec.yml)
+[![CI Tests](https://github.com/slagyr/isaac-imessage/actions/workflows/ci.yml/badge.svg)](https://github.com/slagyr/isaac-imessage/actions/workflows/ci.yml)
 
 Bi-directional iMessage support for Isaac.
 
