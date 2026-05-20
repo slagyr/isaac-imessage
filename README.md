@@ -67,8 +67,6 @@ might inject into the same map.
 
 Optional:
 
-- `:imessage/default-target` — fallback handle for outbound records
-  that don't carry their own `:target`. Rarely needed.
 - `:imessage/message-cap` — split replies above this character count
   into multiple sends. Default 2000.
 - `:imessage/max-chunks` — hard cap on how many chunks a single reply

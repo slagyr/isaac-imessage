@@ -25,24 +25,32 @@
       (should (sut/imessage? instance))
       (should (satisfies? comm/Comm instance))))
 
-  (it "uses configured defaults when delivering a record"
+  (it "uses slice service when the record has none"
     (let [[client calls] (fake-client+calls)
           instance       (sut/make {:name "imessage-slot" :imsg-client client})]
-      (configurator/on-startup! instance {:imessage/service        "E:me"
-                                           :imessage/default-target "+15551234567"})
-      (should= {:ok true} (comm/send! instance {:content "hello"}))
+      (configurator/on-startup! instance {:imessage/service "E:me"})
+      (should= {:ok true} (comm/send! instance {:content "hello"
+                                                 :target  "+15551234567"}))
       (should= [{:method "send"
                  :params {:to "+15551234567" :text "hello" :service "e:me"}}]
                (filterv #(= "send" (:method %)) @calls))))
 
-  (it "prefers per-record target and service over slice defaults"
+  (it "prefers per-record service over slice service"
     (let [[client calls] (fake-client+calls)
           instance       (sut/make {:name "imessage-slot" :imsg-client client})]
-      (configurator/on-startup! instance {:imessage/service        "E:me"
-                                           :imessage/default-target "+15551234567"})
+      (configurator/on-startup! instance {:imessage/service "E:me"})
       (should= {:ok true} (comm/send! instance {:content "hello"
                                                 :service "E:other"
-                                                :target "+15550000000"}))
+                                                :target  "+15550000000"}))
       (should= [{:method "send"
                  :params {:to "+15550000000" :text "hello" :service "e:other"}}]
-               (filterv #(= "send" (:method %)) @calls)))))
+               (filterv #(= "send" (:method %)) @calls))))
+
+  (it "fails loudly with permanent classification when :target is missing"
+    (let [[client calls] (fake-client+calls)
+          instance       (sut/make {:name "imessage-slot" :imsg-client client})]
+      (configurator/on-startup! instance {:imessage/service "E:me"})
+      (let [result (comm/send! instance {:content "no target here"})]
+        (should= false (:ok result))
+        (should= false (:transient? result)))
+      (should= [] (filterv #(= "send" (:method %)) @calls)))))

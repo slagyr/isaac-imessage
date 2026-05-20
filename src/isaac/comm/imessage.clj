@@ -16,10 +16,6 @@
 ;; classify the response into the {:ok / :transient?} shape the worker wants.
 ;; ===========================================================================
 
-(defn- default-target [_host slice record]
-  (or (:target record)
-      (:imessage/default-target slice)))
-
 (defn- imsg-params [record]
   (cond-> {:to (:target record) :text (:content record)}
     (:service record) (assoc :service (str/lower-case (:service record)))))
@@ -318,13 +314,20 @@
   (send! [_ record]
     (let [slice   (:slice @state*)
           client  (:imsg-client @state*)
-          target  (default-target host slice record)
+          target  (:target record)
           service (or (:service record) (:imessage/service slice))]
-      (if client
+      (cond
+        (nil? client)
+        {:ok false :transient? true :error "imsg-client not started"}
+
+        (str/blank? target)
+        (do (log/error :imessage.send/no-target :record-id (:id record))
+            {:ok false :transient? false :error "delivery record has no :target"})
+
+        :else
         (send! client {:content (:content record)
                        :service service
-                       :target  target})
-        {:ok false :transient? true :error "imsg-client not started"})))
+                       :target  target}))))
 
   configurator/Reconfigurable
   (on-startup! [this slice]
