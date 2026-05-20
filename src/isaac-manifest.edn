@@ -7,6 +7,8 @@
                                                    :description "Polling cadence in milliseconds. Required (with :db-path) to start the inbound poller."}
                                 :db-path          {:type        :string
                                                    :description "Absolute path to Messages chat.db (typically /Users/<you>/Library/Messages/chat.db). Required to start the inbound poller; omitting it leaves the poller off so tests don't accidentally read a real chat.db."}
+                                :imsg-bin         {:type        :string
+                                                   :description "Path to the imsg binary (e.g. /usr/local/bin/imsg). Defaults to whatever is on PATH; set explicitly when the running shell PATH doesn't include /usr/local/bin (common for headless processes)."}
                                 :message-cap      {:type        :int
                                                    :description "Chunk reply text into separate sends above this character count. Defaults to 2000."}
                                 :allow-from       {:type        :seq

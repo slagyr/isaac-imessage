@@ -353,8 +353,14 @@
   (on-startup! [_ slice]
     (let [client (or (:imsg-client host)
                      (when (:db-path slice)
-                       (imsg-client/start! {:bin     (:imsg-bin slice)
-                                            :db-path (:db-path slice)})))]
+                       (try
+                         (imsg-client/start! {:bin     (:imsg-bin slice)
+                                              :db-path (:db-path slice)})
+                         (catch Exception e
+                           (log/error :imsg.client/start-failed
+                                      :error (.getMessage e)
+                                      :imsg-bin (:imsg-bin slice))
+                           nil))))]
       (reset! state* {:host host :slice slice :status :started :imsg-client client}))
     (start-poller! state* host slice))
   (on-config-change! [_ old-slice new-slice]
