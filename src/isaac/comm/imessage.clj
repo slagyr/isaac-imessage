@@ -252,8 +252,6 @@
 
 (declare ^:private spawn-client!)
 
-(def ^:private reconnect-task-id :imessage.client/reconnect)
-
 (def ^:private reconnect-delays-ms
   "Exponential backoff for imsg subprocess respawns. Final entry is
    used indefinitely until either the subprocess stays up or the
@@ -266,6 +264,7 @@
 (declare ^:private schedule-reconnect!)
 
 (defn- attempt-reconnect! [comm-impl state* attempt]
+  (swap! state* dissoc :reconnect-task-id)
   (let [s (deref state*)]
     (when (= :reconnecting (:status s))
       (if-let [client (spawn-client! comm-impl (:host s) (:slice s))]
@@ -279,16 +278,9 @@
 
 (defn- schedule-reconnect! [comm-impl state* attempt]
   (if-let [sch (system/get :scheduler)]
-    (do
-      ;; Cancel any prior scheduled attempt so we never have two pending.
-      ;; The scheduler removes a one-shot task only after its handler
-      ;; returns, so chaining from inside a handler needs an explicit
-      ;; cancel before the re-schedule.
-      (scheduler/cancel! sch reconnect-task-id)
-      (scheduler/schedule! sch
-                           {:id      reconnect-task-id
-                            :trigger {:kind :delay :ms (reconnect-delay-ms attempt)}
-                            :handler (fn [_] (attempt-reconnect! comm-impl state* attempt))}))
+    (let [id (scheduler/after! sch (reconnect-delay-ms attempt)
+                               (fn [_] (attempt-reconnect! comm-impl state* attempt)))]
+      (swap! state* assoc :reconnect-task-id id))
     (log/warn :imsg.client/reconnect-skipped :reason :no-scheduler)))
 
 (defn- on-imsg-disconnect! [comm-impl state*]
@@ -362,8 +354,9 @@
           ;; Any scheduled reconnect attempt is torn down too. A pending
           ;; one would otherwise revive the comm against the operator's
           ;; intent. (No-op if no reconnect was scheduled.)
-          (when-let [sch (system/get :scheduler)]
-            (scheduler/cancel! sch reconnect-task-id))
+          (when-let [task-id (:reconnect-task-id @state*)]
+            (when-let [sch (system/get :scheduler)]
+              (scheduler/cancel! sch task-id)))
           ;; :status :stopped also lets an in-flight reconnect attempt
           ;; bail out on its next status check, belt-and-suspenders.
           (reset! state* {:host host :slice nil :status :stopped :prior old-slice})

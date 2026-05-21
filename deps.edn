@@ -12,17 +12,17 @@
 
   :test {:extra-paths ["spec"]
          :extra-deps  {io.github.slagyr/isaac-spec {:git/url   "https://github.com/slagyr/isaac.git"
-                                                    :git/sha   "f2474666a9e601396cd5d5a830438427b855f653"
+                                                    :git/sha   "6d22b61a154a1e029ac457a8297df6756d0ede9b"
                                                     :deps/root "spec"}}}
 
   :spec {:extra-paths ["spec"]
          :extra-deps  {io.github.slagyr/isaac-spec {:git/url   "https://github.com/slagyr/isaac.git"
-                                                    :git/sha   "f2474666a9e601396cd5d5a830438427b855f653"
+                                                    :git/sha   "6d22b61a154a1e029ac457a8297df6756d0ede9b"
                                                     :deps/root "spec"}}
          :main-opts   ["-m" "speclj.main" "-c" "-D" "spec"]}
 
   :features {:extra-deps {io.github.slagyr/isaac-spec {:git/url   "https://github.com/slagyr/isaac.git"
-                                                       :git/sha   "f2474666a9e601396cd5d5a830438427b855f653"
+                                                       :git/sha   "6d22b61a154a1e029ac457a8297df6756d0ede9b"
                                                        :deps/root "spec"}}
              :main-opts  ["-m" "gherclj.main"
                           "-f" "features"
