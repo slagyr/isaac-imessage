@@ -19,15 +19,15 @@
   "imsg-client API. Real impl wraps a long-lived `imsg rpc`
    subprocess; tests reify a stub that captures calls."
   (-request! [client method params])
-  (-notify!  [client method params])
-  (-stop!    [client])
+  (-notify! [client method params])
+  (-stop! [client])
   (-alive?-client [client]))
 
 (defprotocol Subprocess
   "Seam over a live OS subprocess. The default impl wraps a
    babashka.process Process; tests provide a fake."
   (-stdout-reader [proc])
-  (-stdin-writer  [proc])
+  (-stdin-writer [proc])
   (-alive? [proc])
   (-destroy [proc]))
 
@@ -46,7 +46,7 @@
   "Spawn `imsg rpc` with the given options. Returns a Subprocess."
   [{:keys [bin db-path]}]
   (let [args (cond-> [(or bin "imsg") "rpc"]
-               db-path (into ["--db" db-path]))
+                     db-path (into ["--db" db-path]))
         bb   (process/process args {:in :pipe :out :pipe :err :pipe})]
     (bb-subprocess bb)))
 
@@ -157,6 +157,6 @@
     (assoc client :reader-thread reader-thread)))
 
 (defn request! [client method params] (-request! client method params))
-(defn notify!  [client method params] (-notify!  client method params))
-(defn stop!    [client] (when client (-stop! client)))
-(defn alive?   [client] (and client (-alive?-client client)))
+(defn notify! [client method params] (-notify! client method params))
+(defn stop! [client] (when client (-stop! client)))
+(defn alive? [client] (and client (-alive?-client client)))

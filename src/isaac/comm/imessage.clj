@@ -6,7 +6,6 @@
     [isaac.comm :as comm]
     [isaac.comm.delivery.queue :as queue]
     [isaac.comm.imessage.imsg-client :as imsg-client]
-    [isaac.comm.registry :as comm-registry]
     [isaac.configurator :as configurator]
     [isaac.logger :as log]
     [isaac.scheduler :as scheduler]
@@ -19,7 +18,7 @@
 
 (defn- imsg-params [record]
   (cond-> {:to (:target record) :text (:content record)}
-    (:service record) (assoc :service (str/lower-case (:service record)))))
+          (:service record) (assoc :service (str/lower-case (:service record)))))
 
 (defn- classify-imsg-error [error]
   (let [msg (or (some-> (ex-data error) :rpc-error :message)
@@ -36,9 +35,9 @@
   (let [result (deref (imsg-client/request! client "send" (imsg-params record))
                       30000 ::timeout)]
     (cond
-      (= ::timeout result)         {:ok false :transient? true :error :timeout}
+      (= ::timeout result) {:ok false :transient? true :error :timeout}
       (instance? Throwable result) (classify-imsg-error result)
-      :else                        {:ok true})))
+      :else {:ok true})))
 
 ;; ===========================================================================
 ;; Inbound — `imsg watch.subscribe` pushes JSON-RPC notifications. The
@@ -49,9 +48,9 @@
 
 (defn- allowed? [allow-from handle]
   (cond
-    (nil? allow-from)               true
+    (nil? allow-from) true
     (some #(= % handle) allow-from) true
-    :else                           false))
+    :else false))
 
 (defn notification->work-item
   "Pure: translates an imsg `message` notification into an Isaac
@@ -133,7 +132,7 @@
    (ensure-session! state-dir work-item)
    (api/dispatch! state-dir
                   (cond-> (dispatch-request work-item)
-                    comm-impl (assoc :comm comm-impl)))))
+                          comm-impl (assoc :comm comm-impl)))))
 
 (defn result->reply-text [result]
   (or (get-in result [:response :message :content])
@@ -228,7 +227,7 @@
       (try
         (if state-dir
           (system/with-nested-system {:state-dir state-dir}
-            (dispatch-and-enqueue-reply! state-dir work-item comm-impl max-chars max-chunks))
+                                     (dispatch-and-enqueue-reply! state-dir work-item comm-impl max-chars max-chunks))
           (dispatch-and-enqueue-reply! state-dir work-item comm-impl max-chars max-chunks))
         (catch Exception e
           (log/error :imessage.notification/dispatch-failed
@@ -301,7 +300,7 @@
       (imsg-client/start! {:bin             (:imessage/bin slice)
                            :db-path         (:imessage/db-path slice)
                            :on-notification (fn [n] (on-imsg-notification! comm-impl n))
-                           :on-disconnect   (fn []  (on-imsg-disconnect! comm-impl (state-atom comm-impl)))})
+                           :on-disconnect   (fn [] (on-imsg-disconnect! comm-impl (state-atom comm-impl)))})
       (catch Exception e
         (log/error :imsg.client/start-failed
                    :error (.getMessage e)
