@@ -251,45 +251,41 @@
 
 (declare ^:private spawn-client!)
 
-(def ^:private reconnect-delays-ms
-  "Exponential backoff for imsg subprocess respawns. Final entry is
-   used indefinitely until either the subprocess stays up or the
-   comm is torn down."
-  [1000 5000 30000 120000 600000])
+(def ^:private reconnect-retry-opts
+  ;; Hand failure off to the scheduler's :retry policy: exponential
+  ;; doubling starting at 1s, capped at 10 minutes, with a generous
+  ;; attempts cap so we don't silently give up on a long outage. The
+  ;; scheduler logs :scheduler/disabled if we ever hit the cap.
+  {:on-error       :retry
+   :backoff-ms     1000
+   :max-backoff-ms 600000
+   :retry-attempts 100})
 
-(defn- reconnect-delay-ms [attempt]
-  (nth reconnect-delays-ms (min attempt (dec (count reconnect-delays-ms)))))
-
-(declare ^:private schedule-reconnect!)
-
-(defn- attempt-reconnect! [comm-impl state* attempt]
-  (swap! state* dissoc :reconnect-task-id)
+(defn- attempt-reconnect! [comm-impl state*]
   (let [s (deref state*)]
     (when (= :reconnecting (:status s))
       (if-let [client (spawn-client! comm-impl (:host s) (:slice s))]
         (do
           (swap! state* assoc :imsg-client client :status :started)
-          (log/info :imsg.client/reconnected :attempt (inc attempt))
+          (log/info :imsg.client/reconnected)
           (subscribe-to-inbound! client))
-        (do
-          (log/warn :imsg.client/reconnect-failed :attempt (inc attempt))
-          (schedule-reconnect! comm-impl state* (inc attempt)))))))
-
-(defn- schedule-reconnect! [comm-impl state* attempt]
-  (if-let [sch (system/get :scheduler)]
-    (let [id (scheduler/after! sch (reconnect-delay-ms attempt)
-                               (fn [_] (attempt-reconnect! comm-impl state* attempt)))]
-      (swap! state* assoc :reconnect-task-id id))
-    (log/warn :imsg.client/reconnect-skipped :reason :no-scheduler)))
+        ;; Throw so the scheduler's :retry kicks in. A normal return
+        ;; would look like success and drop the task.
+        (throw (ex-info "imsg reconnect failed" {}))))))
 
 (defn- on-imsg-disconnect! [comm-impl state*]
   ;; Only kick off a respawn job if we WERE :started (i.e. this is the
   ;; first death notice). Reentrant calls during a reconnect attempt
-  ;; would otherwise schedule duplicate reconnect tasks.
+  ;; would otherwise schedule a second task on top of the first.
   (let [old (deref state*)]
     (when (and (= :started (:status old))
                (compare-and-set! state* old (assoc old :imsg-client nil :status :reconnecting)))
-      (schedule-reconnect! comm-impl state* 0))))
+      (if-let [sch (system/get :scheduler)]
+        (let [id (scheduler/after! sch (:backoff-ms reconnect-retry-opts)
+                                   (fn [_] (attempt-reconnect! comm-impl state*))
+                                   reconnect-retry-opts)]
+          (swap! state* assoc :reconnect-task-id id))
+        (log/warn :imsg.client/reconnect-skipped :reason :no-scheduler)))))
 
 (defn- state-atom [comm-impl]
   (.-state* comm-impl))
@@ -352,7 +348,8 @@
             (try (imsg-client/stop! client) (catch Exception _ nil)))
           ;; Any scheduled reconnect attempt is torn down too. A pending
           ;; one would otherwise revive the comm against the operator's
-          ;; intent. (No-op if no reconnect was scheduled.)
+          ;; intent. The id stays stable across :retry re-fires, so the
+          ;; one captured at schedule time is still the right one here.
           (when-let [task-id (:reconnect-task-id @state*)]
             (when-let [sch (system/get :scheduler)]
               (scheduler/cancel! sch task-id)))
