@@ -80,10 +80,10 @@
     (it "drops messages with no chat identity"
       (should= nil (sut/notification->work-item @slice (notif {:chat_guid nil :chat_identifier nil}))))))
 
-(describe "iMessage dispatch-request"
+(describe "iMessage dispatch-input"
 
   (it "embeds a trusted inbound_meta block in :soul-prepend"
-    (let [req (sut/dispatch-request
+    (let [req (sut/dispatch-input
                 {:session-key "imessage:T1"
                  :input       "hi"
                  :origin      {:kind :imessage :chat-guid "T1" :handle "+15551234567"}})]
@@ -95,7 +95,7 @@
       (should (str/includes? (:soul-prepend req) "\"was_mentioned\":false"))))
 
   (it "instructs the LLM to keep iMessage replies brief"
-    (let [req (sut/dispatch-request
+    (let [req (sut/dispatch-input
                 {:session-key "imessage:T1"
                  :input       "hi"
                  :origin      {:kind :imessage :chat-guid "T1" :handle "+15551234567"}})]

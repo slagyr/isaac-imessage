@@ -112,7 +112,7 @@
           "handle"        (:handle origin)
           "was_mentioned" false})))
 
-(defn dispatch-request [work-item]
+(defn dispatch-input [work-item]
   {:session-key  (:session-key work-item)
    :input        (:input work-item)
    :origin       (:origin work-item)
@@ -131,7 +131,7 @@
   ([state-dir work-item comm-impl]
    (ensure-session! state-dir work-item)
    (api/dispatch! state-dir
-                  (cond-> (dispatch-request work-item)
+                  (cond-> (dispatch-input work-item)
                           comm-impl (assoc :comm comm-impl)))))
 
 (defn result->reply-text [result]
