@@ -9,6 +9,7 @@
     [isaac.comm.registry :as comm-registry]
     [isaac.configurator :as configurator]
     [isaac.logger :as log]
+    [isaac.scheduler :as scheduler]
     [isaac.system :as system]))
 
 ;; ===========================================================================
@@ -251,6 +252,8 @@
 
 (declare ^:private spawn-client!)
 
+(def ^:private reconnect-task-id :imessage.client/reconnect)
+
 (def ^:private reconnect-delays-ms
   "Exponential backoff for imsg subprocess respawns. Final entry is
    used indefinitely until either the subprocess stays up or the
@@ -260,28 +263,42 @@
 (defn- reconnect-delay-ms [attempt]
   (nth reconnect-delays-ms (min attempt (dec (count reconnect-delays-ms)))))
 
-(defn- reconnect-loop! [comm-impl state*]
-  (loop [attempt 0]
-    (Thread/sleep (reconnect-delay-ms attempt))
-    (let [s (deref state*)]
-      (when (= :reconnecting (:status s))
-        (if-let [client (spawn-client! comm-impl (:host s) (:slice s))]
-          (do
-            (swap! state* assoc :imsg-client client :status :started)
-            (log/info :imsg.client/reconnected :attempt (inc attempt))
-            (subscribe-to-inbound! client))
-          (do
-            (log/warn :imsg.client/reconnect-failed :attempt (inc attempt))
-            (recur (inc attempt))))))))
+(declare ^:private schedule-reconnect!)
+
+(defn- attempt-reconnect! [comm-impl state* attempt]
+  (let [s (deref state*)]
+    (when (= :reconnecting (:status s))
+      (if-let [client (spawn-client! comm-impl (:host s) (:slice s))]
+        (do
+          (swap! state* assoc :imsg-client client :status :started)
+          (log/info :imsg.client/reconnected :attempt (inc attempt))
+          (subscribe-to-inbound! client))
+        (do
+          (log/warn :imsg.client/reconnect-failed :attempt (inc attempt))
+          (schedule-reconnect! comm-impl state* (inc attempt)))))))
+
+(defn- schedule-reconnect! [comm-impl state* attempt]
+  (if-let [sch (system/get :scheduler)]
+    (do
+      ;; Cancel any prior scheduled attempt so we never have two pending.
+      ;; The scheduler removes a one-shot task only after its handler
+      ;; returns, so chaining from inside a handler needs an explicit
+      ;; cancel before the re-schedule.
+      (scheduler/cancel! sch reconnect-task-id)
+      (scheduler/schedule! sch
+                           {:id      reconnect-task-id
+                            :trigger {:kind :delay :ms (reconnect-delay-ms attempt)}
+                            :handler (fn [_] (attempt-reconnect! comm-impl state* attempt))}))
+    (log/warn :imsg.client/reconnect-skipped :reason :no-scheduler)))
 
 (defn- on-imsg-disconnect! [comm-impl state*]
   ;; Only kick off a respawn job if we WERE :started (i.e. this is the
   ;; first death notice). Reentrant calls during a reconnect attempt
-  ;; would otherwise spawn duplicate background threads.
+  ;; would otherwise schedule duplicate reconnect tasks.
   (let [old (deref state*)]
     (when (and (= :started (:status old))
                (compare-and-set! state* old (assoc old :imsg-client nil :status :reconnecting)))
-      (future (reconnect-loop! comm-impl state*)))))
+      (schedule-reconnect! comm-impl state* 0))))
 
 (defn- state-atom [comm-impl]
   (.-state* comm-impl))
@@ -342,8 +359,13 @@
       (nil? new-slice)
       (do (when-let [client (:imsg-client @state*)]
             (try (imsg-client/stop! client) (catch Exception _ nil)))
-          ;; :status :stopped lets any in-flight reconnect-loop exit
-          ;; (it checks for :reconnecting before each attempt).
+          ;; Any scheduled reconnect attempt is torn down too. A pending
+          ;; one would otherwise revive the comm against the operator's
+          ;; intent. (No-op if no reconnect was scheduled.)
+          (when-let [sch (system/get :scheduler)]
+            (scheduler/cancel! sch reconnect-task-id))
+          ;; :status :stopped also lets an in-flight reconnect attempt
+          ;; bail out on its next status check, belt-and-suspenders.
           (reset! state* {:host host :slice nil :status :stopped :prior old-slice})
           (log/info :imsg.client/stopped))
 

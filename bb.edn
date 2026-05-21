@@ -18,9 +18,9 @@
                      '{io.github.slagyr/isaac      {:local/root "../isaac"}
                        io.github.slagyr/isaac-spec {:local/root "../isaac/spec"}}
                      '{io.github.slagyr/isaac      {:git/url "https://github.com/slagyr/isaac.git"
-                                                    :git/sha "e49d0905fda64ad89c5e9b0ffc7a3760c7660edf"}
+                                                    :git/sha "f2474666a9e601396cd5d5a830438427b855f653"}
                        io.github.slagyr/isaac-spec {:git/url   "https://github.com/slagyr/isaac.git"
-                                                    :git/sha   "e49d0905fda64ad89c5e9b0ffc7a3760c7660edf"
+                                                    :git/sha   "f2474666a9e601396cd5d5a830438427b855f653"
                                                     :deps/root "spec"}})}))
 
   spec     {:doc      "Run Speclj specs"
