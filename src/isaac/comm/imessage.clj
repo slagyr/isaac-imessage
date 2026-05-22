@@ -3,6 +3,7 @@
     [cheshire.core :as json]
     [clojure.string :as str]
     [isaac.api :as api]
+    [isaac.charge :as charge]
     [isaac.comm :as comm]
     [isaac.comm.delivery.queue :as queue]
     [isaac.comm.imessage.imsg-client :as imsg-client]
@@ -130,9 +131,8 @@
   ([state-dir work-item] (dispatch-work-item! state-dir work-item nil))
   ([state-dir work-item comm-impl]
    (ensure-session! state-dir work-item)
-   (api/dispatch! state-dir
-                  (cond-> (dispatch-input work-item)
-                          comm-impl (assoc :comm comm-impl)))))
+   (api/dispatch! (charge/build (cond-> (assoc (dispatch-input work-item) :state-dir state-dir)
+                                  comm-impl (assoc :comm comm-impl))))))
 
 (defn result->reply-text [result]
   (or (get-in result [:response :message :content])
