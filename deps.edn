@@ -7,6 +7,29 @@
  ;; via :local/root "." during tests.
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}}
 
+ :isaac/manifest
+ {:id      :isaac.comm.imessage
+  :version "0.1.0"
+
+  ;; Phase 8 of the berth epic (isaac-qqgv) moved comm contributions to
+  ;; the :isaac.server/comm berth declared by isaac.core.
+  :isaac.server/comm
+  {:imessage {:factory isaac.comm.imessage/make
+              :schema
+              {:imessage/service     {:type        :string
+                                      :description "Messages service name passed through to imsg (\"iMessage\" or \"SMS\"). Defaults to iMessage."}
+               :imessage/db-path     {:type        :string
+                                      :description "Absolute path to Messages chat.db (typically /Users/<you>/Library/Messages/chat.db). Required to spawn the imsg subprocess; omitting it leaves the comm off so tests don't accidentally hit a real chat.db."}
+               :imessage/bin         {:type        :string
+                                      :description "Path to the imsg binary (e.g. /usr/local/bin/imsg). Defaults to whatever is on PATH; set explicitly when the running shell PATH doesn't include /usr/local/bin (common for headless processes)."}
+               :imessage/message-cap {:type        :int
+                                      :description "Chunk reply text into separate sends above this character count. Defaults to 2000."}
+               :imessage/max-chunks  {:type        :int
+                                      :description "Hard cap on chunks a single reply produces. Above the cap the tail is dropped with a notice. Defaults to 3 — long replies become 3 messages, not 50."}
+               :imessage/allow-from  {:type        :seq
+                                      :spec        {:type :string}
+                                      :description "Inbound allowlist of iMessage handles (phone numbers or emails). nil/missing = no filter; empty list = fail-closed (drops everything)."}}}}}
+
  :aliases
  {:dev-local {:override-deps {io.github.slagyr/isaac {:local/root "../isaac"}}}
 
