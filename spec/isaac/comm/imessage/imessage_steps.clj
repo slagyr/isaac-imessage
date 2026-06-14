@@ -6,13 +6,13 @@
     [isaac.comm.imessage :as imessage]
     [isaac.comm.imessage.imsg-client :as imsg-client]
     [isaac.comm.registry :as comm-registry]
-    [isaac.configurator :as configurator]
-    [isaac.config.loader :as config]
+    [isaac.config.api :as config]
+    [isaac.foundation.root-steps :as root-steps]
     [isaac.fs :as fs]
     [isaac.llm.api.grover :as grover]
-    [isaac.session.session-steps :as session-steps]
+    [isaac.reconfigurable :as reconfigurable]
     [isaac.step-tables :as match]
-    [isaac.system :as system]))
+    [isaac.nexus :as nexus]))
 
 (helper! isaac.comm.imessage.imessage-steps)
 
@@ -32,17 +32,16 @@
 (defn default-imessage-setup []
   ;; Don't blow away an already-initialized state dir (e.g. default Grover
   ;; setup ran first to install LLM defaults). Otherwise initialize fresh.
-  (when-not (g/get :state-dir)
-    (session-steps/in-memory-state "target/test-state"))
+  (when-not (g/get :root)
+    (root-steps/in-memory-state "target/test-state"))
   (let [client   (fake-imsg-client)
         host     {:name      "imessage"
                   :imsg-client client
-                  ;; Host's :state-dir is the *runtime* state dir
-                  ;; (~/.isaac in production) where the delivery queue
-                  ;; and any other per-comm files live.
-                  :state-dir (str (g/get :state-dir) "/.isaac")}
+                  ;; Host's :state-dir is the Isaac root where the
+                  ;; delivery queue and other per-comm files live.
+                  :state-dir (g/get :root)}
         instance (imessage/make host)]
-    (configurator/on-startup! instance {:imessage/service "iMessage"})
+    (reconfigurable/on-startup! instance {:imessage/service "iMessage"})
     (comm-registry/register-instance! "imessage" instance)
     (g/assoc! :imessage-instance instance)
     (g/assoc! :imessage-fake-client client)
@@ -50,11 +49,11 @@
 
 (defn imessage-delivery-worker-ticks []
   (g/assoc! :isaac-file-phase :assert)
-  (let [runtime-state-dir (str (g/get :state-dir) "/.isaac")]
+  (let [runtime-state-dir (g/get :root)]
     (g/assoc! :runtime-state-dir runtime-state-dir)
     (binding [fs/*fs* (or (g/get :mem-fs) fs/*fs*)]
-      (system/with-system {:state-dir runtime-state-dir}
-        (worker/tick! {})))))
+      (nexus/-with-nexus {:root runtime-state-dir}
+                         (worker/tick! {})))))
 
 (defn- imessage-slice []
   (or (some-> (g/get :imessage-instance) imessage/state :slice) {}))
@@ -76,7 +75,7 @@
 
 (defn- update-imessage-slice! [updater]
   (when-let [instance (g/get :imessage-instance)]
-    (configurator/on-config-change! instance
+    (reconfigurable/on-config-change! instance
                                     (:slice (imessage/state instance))
                                     (updater (:slice (imessage/state instance))))))
 
@@ -106,8 +105,8 @@
 (defn imessage-inbox-is-polled-and-dispatched []
   (grover/clear-provider-requests!)
   (binding [fs/*fs* (or (g/get :mem-fs) fs/*fs*)]
-    (let [cfg   (config/load-config {:home (g/get :state-dir)})
-          _     (config/set-snapshot! cfg)
+    (let [cfg   (:config (config/load-config-result {:root (g/get :root)}))
+          _     (config/dangerously-install-config! cfg "imessage feature")
           table (g/get :imessage-test-rows)
           items (push-notifications! (:headers table) (:rows table) true)]
       (g/assoc! :imessage-work-items items)
@@ -166,6 +165,10 @@
                                     :body    (:text params)}))))
         result      (match/match-entries table calls)]
     (g/should= [] (:failures result))))
+
+(defgiven "an in-memory Isaac state directory {path:string}" isaac.foundation.root-steps/in-memory-state
+  "Compatibility route for features that still say 'in-memory Isaac state
+   directory'. The harness stores the path as :root.")
 
 (defgiven "default iMessage setup" isaac.comm.imessage.imessage-steps/default-imessage-setup
   "Sets up an in-memory state dir, registers a FakeImsgClient under

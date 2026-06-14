@@ -4,13 +4,13 @@
     [clojure.string :as str]
     [isaac.api :as api]
     [isaac.charge :as charge]
-    [isaac.comm :as comm]
     [isaac.comm.delivery.queue :as queue]
     [isaac.comm.imessage.imsg-client :as imsg-client]
-    [isaac.configurator :as configurator]
+    [isaac.comm.protocol :as comm]
     [isaac.logger :as log]
-    [isaac.scheduler :as scheduler]
-    [isaac.system :as system]))
+    [isaac.reconfigurable :as reconfigurable]
+    [isaac.nexus :as nexus]
+    [isaac.scheduler.runtime :as scheduler]))
 
 ;; ===========================================================================
 ;; Outbound — translate a delivery record into an imsg `send` request and
@@ -214,8 +214,8 @@
 (defn on-imsg-notification!
   "Production-side notification handler. Reads slice + state-dir from
    the comm's state, routes the notification through the dispatch +
-   enqueue pipeline, wraps in system/with-nested-system so the queue
-   lands under the comm's :state-dir. Exposed for test step calling."
+   enqueue pipeline, wraps in nexus/-with-nested-nexus so the queue
+   lands under the comm's root. Exposed for test step calling."
   [comm-impl notification]
   (let [s          (state comm-impl)
         slice      (:slice s)
@@ -226,8 +226,8 @@
     (when-let [work-item (notification->work-item slice notification)]
       (try
         (if state-dir
-          (system/with-nested-system {:state-dir state-dir}
-                                     (dispatch-and-enqueue-reply! state-dir work-item comm-impl max-chars max-chunks))
+          (nexus/-with-nested-nexus {:root state-dir}
+                                    (dispatch-and-enqueue-reply! state-dir work-item comm-impl max-chars max-chunks))
           (dispatch-and-enqueue-reply! state-dir work-item comm-impl max-chars max-chunks))
         (catch Exception e
           (log/error :imessage.notification/dispatch-failed
@@ -280,7 +280,7 @@
   (let [old (deref state*)]
     (when (and (= :started (:status old))
                (compare-and-set! state* old (assoc old :imsg-client nil :status :reconnecting)))
-      (if-let [sch (system/get :scheduler)]
+      (if-let [sch (nexus/get :scheduler)]
         (let [id (scheduler/after! sch (:backoff-ms reconnect-retry-opts)
                                    (fn [_] (attempt-reconnect! comm-impl state*))
                                    reconnect-retry-opts)]
@@ -333,7 +333,7 @@
                        :service service
                        :target  target}))))
 
-  configurator/Reconfigurable
+  reconfigurable/Reconfigurable
   (on-startup! [this slice]
     (reset! state* {:host host :slice slice :status :started :imsg-client nil})
     (let [client (or (:imsg-client host)
@@ -351,7 +351,7 @@
           ;; intent. The id stays stable across :retry re-fires, so the
           ;; one captured at schedule time is still the right one here.
           (when-let [task-id (:reconnect-task-id @state*)]
-            (when-let [sch (system/get :scheduler)]
+            (when-let [sch (nexus/get :scheduler)]
               (scheduler/cancel! sch task-id)))
           ;; :status :stopped also lets an in-flight reconnect attempt
           ;; bail out on its next status check, belt-and-suspenders.
