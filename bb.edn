@@ -1,70 +1,50 @@
 {:paths ["src" "spec"]
 
- ;; bb tasks auto-detect isaac: a sibling ../isaac checkout (so cross-repo
- ;; edits land without pushing) when present, otherwise the pinned git sha
- ;; (so fresh clones / CI just work). Set ISAAC_GIT=1 to force git even
- ;; when the local checkout exists.
- ;;
- ;; isaac-spec uses :local/root "../isaac/spec" rather than :local/root
- ;; "../isaac" + :deps/root "spec" — tools.deps applies the inner deps.edn's
- ;; :deps but not its :paths when the same local-root is reused with
- ;; :deps/root, leaving ../isaac/spec off the classpath.
  :tasks
- {:init (let [use-local? (and (not (System/getenv "ISAAC_GIT"))
-                              (babashka.fs/exists? "../isaac")
-                              (babashka.fs/exists? "../isaac/spec"))]
-          (babashka.deps/add-deps
-            {:deps (if use-local?
-                     '{io.github.slagyr/isaac      {:local/root "../isaac"}
-                       io.github.slagyr/isaac-spec {:local/root "../isaac/spec"}}
-                     '{io.github.slagyr/isaac      {:git/url "https://github.com/slagyr/isaac.git"
-                                                    :git/sha "939aa4681e2d0c411672a80c7a0cc486b007b1fe"}
-                       io.github.slagyr/isaac-spec {:git/url   "https://github.com/slagyr/isaac.git"
-                                                    :git/sha   "939aa4681e2d0c411672a80c7a0cc486b007b1fe"
-                                                    :deps/root "spec"}})}))
+ {spec {:doc  "Run speclj specs (pass file/dir to narrow)"
+        :task (if (seq *command-line-args*)
+                (apply shell "clojure" "-M:spec" *command-line-args*)
+                (shell "clojure" "-M:spec"))}
 
-  spec     {:doc      "Run Speclj specs"
-            :requires ([speclj.main :as speclj])
-            :task     (apply speclj/-main "-c" "-D" "spec" *command-line-args*)}
+  ci {:doc  "Run unit specs + acceptance features"
+      :task (do (shell "clojure" "-M:spec")
+                (shell "clojure" "-M:features"))}
 
-  features {:doc      "Run gherclj feature specs (features/ + isaac.**-steps, excludes @wip)"
-            :requires ([gherclj.main :as main])
-            :task     (apply main/-main
-                        "-f" "features"
-                        "-s" "isaac.**-steps"
-                        "-t" "~wip"
-                        *command-line-args*)}
+  features {:doc  "Run gherclj feature specs (excludes @wip)"
+            :task (do
+                    (babashka.fs/delete-tree "target")
+                    (apply shell "clojure" "-M:features" *command-line-args*))}
 
-  smoke    {:doc      "Sanity-check the local Mac for iMessage usage. Verifies osascript / sqlite3 are on PATH and tries a read of ~/Library/Messages/chat.db. Optional: pass a handle + message to actually send a test iMessage. Usage: bb smoke [<handle> <message>]"
-            :requires ([babashka.fs :as fs]
-                       [babashka.process :as p]
-                       [clojure.string :as str])
-            :task     (let [home       (System/getProperty "user.home")
-                            chat-db    (str home "/Library/Messages/chat.db")
-                            [handle & body-parts] *command-line-args*
-                            body       (when (seq body-parts) (str/join " " body-parts))
-                            check      (fn [label cmd]
-                                         (println "▸" label)
-                                         (try
-                                           (let [{:keys [exit out err]} (deref (p/process cmd {:out :string :err :string}))]
-                                             (if (zero? exit)
-                                               (println "  ✓ " (str/trim (or out "")))
-                                               (println "  ✗ exit=" exit "err=" (str/trim (or err "")))))
-                                           (catch Exception e
-                                             (println "  ✗" (.getMessage e)))))]
-                        (check "osascript on PATH" ["osascript" "-e" "return \"ok\""])
-                        (check "sqlite3 on PATH" ["sqlite3" "-version"])
-                        (println "▸ chat.db readable (requires Full Disk Access)")
-                        (if-not (fs/exists? chat-db)
-                          (println "  ✗ not found at" chat-db)
-                          (check "chat.db count" ["sqlite3" chat-db "SELECT COUNT(*) FROM message;"]))
-                        (if (and handle body)
-                          (do
-                            (println "▸ sending iMessage to" handle "(requires Automation permission for Messages)")
-                            (check "send" ["osascript" "-e"
-                                           (str "tell application \"Messages\"\n"
-                                                "  set targetService to 1st service whose service type = iMessage\n"
-                                                "  set targetBuddy to buddy \"" handle "\" of targetService\n"
-                                                "  send \"" (str/replace body "\"" "\\\"") "\" to targetBuddy\n"
-                                                "end tell")]))
-                          (println "▸ skipping send (pass <handle> <message> args to exercise it)")))}}}
+  smoke {:doc      "Sanity-check the local Mac for iMessage usage. Verifies osascript / sqlite3 are on PATH and tries a read of ~/Library/Messages/chat.db. Optional: pass a handle + message to actually send a test iMessage. Usage: bb smoke [<handle> <message>]"
+         :requires ([babashka.fs :as fs]
+                    [babashka.process :as p]
+                    [clojure.string :as str])
+         :task     (let [home       (System/getProperty "user.home")
+                         chat-db    (str home "/Library/Messages/chat.db")
+                         [handle & body-parts] *command-line-args*
+                         body       (when (seq body-parts) (str/join " " body-parts))
+                         check      (fn [label cmd]
+                                      (println "▸" label)
+                                      (try
+                                        (let [{:keys [exit out err]} (deref (p/process cmd {:out :string :err :string}))]
+                                          (if (zero? exit)
+                                            (println "  ✓ " (str/trim (or out "")))
+                                            (println "  ✗ exit=" exit "err=" (str/trim (or err "")))))
+                                        (catch Exception e
+                                          (println "  ✗" (.getMessage e)))))]
+                     (check "osascript on PATH" ["osascript" "-e" "return \"ok\""])
+                     (check "sqlite3 on PATH" ["sqlite3" "-version"])
+                     (println "▸ chat.db readable (requires Full Disk Access)")
+                     (if-not (fs/exists? chat-db)
+                       (println "  ✗ not found at" chat-db)
+                       (check "chat.db count" ["sqlite3" chat-db "SELECT COUNT(*) FROM message;"]))
+                     (if (and handle body)
+                       (do
+                         (println "▸ sending iMessage to" handle "(requires Automation permission for Messages)")
+                         (check "send" ["osascript" "-e"
+                                        (str "tell application \"Messages\"\n"
+                                             "  set targetService to 1st service whose service type = iMessage\n"
+                                             "  set targetBuddy to buddy \"" handle "\" of targetService\n"
+                                             "  send \"" (str/replace body "\"" "\\\"") "\" to targetBuddy\n"
+                                             "end tell")]))
+                       (println "▸ skipping send (pass <handle> <message> args to exercise it)")))}}}

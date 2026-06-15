@@ -7,6 +7,7 @@
     [isaac.comm.imessage.imsg-client :as imsg-client]
     [isaac.comm.registry :as comm-registry]
     [isaac.config.api :as config]
+    [isaac.config.loader :as loader]
     [isaac.foundation.root-steps :as root-steps]
     [isaac.fs :as fs]
     [isaac.llm.api.grover :as grover]
@@ -105,16 +106,20 @@
 (defn imessage-inbox-is-polled-and-dispatched []
   (grover/clear-provider-requests!)
   (binding [fs/*fs* (or (g/get :mem-fs) fs/*fs*)]
-    (let [cfg   (:config (config/load-config-result {:root (g/get :root)}))
+    (let [cfg   (:config (loader/load-config-result {:root (g/get :root)}))
           _     (config/dangerously-install-config! cfg "imessage feature")
           table (g/get :imessage-test-rows)
           items (push-notifications! (:headers table) (:rows table) true)]
       (g/assoc! :imessage-work-items items)
       (g/assoc! :llm-request (grover/last-request)))))
 
+(defn- live-imessage-instance []
+  (or (g/get :imessage-instance)
+      (nexus/get-in [:comms :imessage])
+      (comm-registry/comm-for "imessage")))
+
 (defn imessage-comm-has-state [table]
-  (let [instance (or (g/get :imessage-instance)
-                     (comm-registry/comm-for "imessage"))]
+  (let [instance (live-imessage-instance)]
     (g/should-not-be-nil instance)
     (let [state (imessage/state instance)]
       (doseq [row (:rows table)]
@@ -135,6 +140,10 @@
   (g/update! :server-config
              #(update (or % {}) :modules
                       (fn [m] (merge {:isaac.comm.imessage {:local/root "."}} m)))))
+
+(defn imessage-isaac-server-started []
+  ;; Lazy: server-steps only exists on the :features classpath.
+  ((requiring-resolve 'isaac.server.server-steps/server-running)))
 
 (defn imessage-message-cap-is [n]
   (update-imessage-slice! #(assoc % :imessage/message-cap n)))
@@ -195,6 +204,11 @@
 (defgiven "the imessage module is declared" isaac.comm.imessage.imessage-steps/imessage-module-is-declared
   "Adds the imessage module to :server-config :modules so the
    discover! step activates the manifest when the Isaac server starts.")
+
+(defgiven "the imessage Isaac server is started" isaac.comm.imessage.imessage-steps/imessage-isaac-server-started
+  "Boots the Isaac server against the scenario state dir with the
+   declared imessage module. Distinct from the generic server step so
+   features don't collide with isaac.agent.module-steps.")
 
 (defthen "the imessage comm has state:" isaac.comm.imessage.imessage-steps/imessage-comm-has-state
   "Asserts the iMessage Comm's internal state map matches each row

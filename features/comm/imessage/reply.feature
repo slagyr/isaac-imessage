@@ -6,7 +6,7 @@ Feature: iMessage end-to-end reply
   runner. This is the headline MVP acceptance goal from PLAN.md.
 
   Background:
-    Given default Grover setup
+    Given default Grover setup in "target/imessage-grover"
     And default iMessage setup
 
   Scenario: inbound message → crew turn → outbound iMessage reply

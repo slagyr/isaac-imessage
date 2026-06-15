@@ -5,8 +5,10 @@
     [isaac.api :as api]
     [isaac.charge :as charge]
     [isaac.comm.delivery.queue :as queue]
+    [isaac.comm.factory :as factory]
     [isaac.comm.imessage.imsg-client :as imsg-client]
     [isaac.comm.protocol :as comm]
+    [isaac.config.root :as root]
     [isaac.logger :as log]
     [isaac.reconfigurable :as reconfigurable]
     [isaac.nexus :as nexus]
@@ -362,10 +364,14 @@
       (swap! state* assoc :slice new-slice :status :changed :prior old-slice))))
 
 (defn make
-  "Comm registry factory: builds an ImessageComm from host context.
-   host = {:state-dir <isaac-state-dir> :name <slot-key>}"
+  "Builds an ImessageComm from host context. host = {:state-dir <isaac-root>
+   :name <slot-key> :imsg-client <optional test stub>}."
   [host]
   (->ImessageComm host (atom {:host host :slice nil :status :new})))
+
+(defmethod factory/create :imessage [node-path _slice]
+  (make {:name      (last node-path)
+         :state-dir (root/current-root)}))
 
 (defn imessage? [x]
   (instance? ImessageComm x))

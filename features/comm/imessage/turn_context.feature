@@ -6,7 +6,7 @@ Feature: iMessage per-turn context injection
   without being tricked by user-controlled text.
 
   Background:
-    Given default Grover setup
+    Given default Grover setup in "target/imessage-grover"
     And default iMessage setup
 
   Scenario: trusted system block is appended for an iMessage turn

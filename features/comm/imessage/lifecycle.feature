@@ -14,7 +14,7 @@ Feature: iMessage comm lifecycle
     Given the EDN isaac file "config/isaac.edn" exists with:
       | path                   | value    |
       | comms.imessage.imessage/service | iMessage |
-    When the Isaac process is started
+    And the imessage Isaac server is started
     Then the comm "imessage" exists with state:
       | path | value |
     And the log has entries matching:
@@ -25,11 +25,10 @@ Feature: iMessage comm lifecycle
     Given the EDN isaac file "config/isaac.edn" exists with:
       | path                   | value    |
       | comms.imessage.imessage/service | iMessage |
-    And the Isaac server is started
+    And the imessage Isaac server is started
     When config is updated:
       | path           | value   |
       | comms.imessage | #delete |
-    And the isaac config is reloaded
     Then the comm "imessage" does not exist
 
   Scenario: a config change updates the live comm without restart
@@ -37,11 +36,10 @@ Feature: iMessage comm lifecycle
       | path                       | value    |
       | comms.imessage.imessage/service     | iMessage |
       | comms.imessage.imessage/message-cap | 2000     |
-    And the Isaac server is started
+    And the imessage Isaac server is started
     When config is updated:
       | path                       | value |
       | comms.imessage.imessage/message-cap | 500   |
-    And the isaac config is reloaded
     Then the imessage comm has state:
       | path                | value    |
       | status              | :changed |
