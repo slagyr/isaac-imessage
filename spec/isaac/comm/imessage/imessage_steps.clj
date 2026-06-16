@@ -42,7 +42,7 @@
                   ;; delivery queue and other per-comm files live.
                   :state-dir (g/get :root)}
         instance (imessage/make host)]
-    (reconfigurable/on-startup! instance {:imessage/service "iMessage"})
+    (reconfigurable/on-load instance {:imessage/service "iMessage"})
     (comm-registry/register-instance! "imessage" instance)
     (g/assoc! :imessage-instance instance)
     (g/assoc! :imessage-fake-client client)
@@ -181,7 +181,7 @@
 
 (defgiven "default iMessage setup" isaac.comm.imessage.imessage-steps/default-imessage-setup
   "Sets up an in-memory state dir, registers a FakeImsgClient under
-   the 'imessage' name, calls on-startup! so the comm wires its own
+   the 'imessage' name, calls on-load so the comm wires its own
    notification handler. Subsequent steps push imsg notifications
    through that handler.")
 

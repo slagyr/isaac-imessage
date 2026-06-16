@@ -28,7 +28,7 @@
   (it "uses slice service when the record has none"
     (let [[client calls] (fake-client+calls)
           instance       (sut/make {:name "imessage-slot" :imsg-client client})]
-      (reconfigurable/on-startup! instance {:imessage/service "E:me"})
+      (reconfigurable/on-load instance {:imessage/service "E:me"})
       (should= {:ok true} (comm/send! instance {:content "hello"
                                                  :target  "+15551234567"}))
       (should= [{:method "send"
@@ -38,7 +38,7 @@
   (it "prefers per-record service over slice service"
     (let [[client calls] (fake-client+calls)
           instance       (sut/make {:name "imessage-slot" :imsg-client client})]
-      (reconfigurable/on-startup! instance {:imessage/service "E:me"})
+      (reconfigurable/on-load instance {:imessage/service "E:me"})
       (should= {:ok true} (comm/send! instance {:content "hello"
                                                 :service "E:other"
                                                 :target  "+15550000000"}))
@@ -49,7 +49,7 @@
   (it "fails loudly with permanent classification when :target is missing"
     (let [[client calls] (fake-client+calls)
           instance       (sut/make {:name "imessage-slot" :imsg-client client})]
-      (reconfigurable/on-startup! instance {:imessage/service "E:me"})
+      (reconfigurable/on-load instance {:imessage/service "E:me"})
       (let [result (comm/send! instance {:content "no target here"})]
         (should= false (:ok result))
         (should= false (:transient? result)))

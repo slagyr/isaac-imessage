@@ -336,7 +336,7 @@
                        :target  target}))))
 
   reconfigurable/Reconfigurable
-  (on-startup! [this slice]
+  (on-load [this slice]
     (reset! state* {:host host :slice slice :status :started :imsg-client nil})
     (let [client (or (:imsg-client host)
                      (spawn-client! this host slice))]
@@ -344,24 +344,21 @@
       (when client
         (subscribe-to-inbound! client))))
   (on-config-change! [_ old-slice new-slice]
-    (cond
-      (nil? new-slice)
-      (do (when-let [client (:imsg-client @state*)]
-            (try (imsg-client/stop! client) (catch Exception _ nil)))
-          ;; Any scheduled reconnect attempt is torn down too. A pending
-          ;; one would otherwise revive the comm against the operator's
-          ;; intent. The id stays stable across :retry re-fires, so the
-          ;; one captured at schedule time is still the right one here.
-          (when-let [task-id (:reconnect-task-id @state*)]
-            (when-let [sch (nexus/get :scheduler)]
-              (scheduler/cancel! sch task-id)))
-          ;; :status :stopped also lets an in-flight reconnect attempt
-          ;; bail out on its next status check, belt-and-suspenders.
-          (reset! state* {:host host :slice nil :status :stopped :prior old-slice})
-          (log/info :imsg.client/stopped))
-
-      :else
-      (swap! state* assoc :slice new-slice :status :changed :prior old-slice))))
+    (swap! state* assoc :slice new-slice :status :changed :prior old-slice))
+  (on-unload [_ old-slice]
+    (when-let [client (:imsg-client @state*)]
+      (try (imsg-client/stop! client) (catch Exception _ nil)))
+    ;; Any scheduled reconnect attempt is torn down too. A pending
+    ;; one would otherwise revive the comm against the operator's
+    ;; intent. The id stays stable across :retry re-fires, so the
+    ;; one captured at schedule time is still the right one here.
+    (when-let [task-id (:reconnect-task-id @state*)]
+      (when-let [sch (nexus/get :scheduler)]
+        (scheduler/cancel! sch task-id)))
+    ;; :status :stopped also lets an in-flight reconnect attempt
+    ;; bail out on its next status check, belt-and-suspenders.
+    (reset! state* {:host host :slice nil :status :stopped :prior old-slice})
+    (log/info :imsg.client/stopped)))
 
 (defn make
   "Builds an ImessageComm from host context. host = {:state-dir <isaac-root>
