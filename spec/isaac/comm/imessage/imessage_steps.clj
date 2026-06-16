@@ -1,5 +1,6 @@
 (ns isaac.comm.imessage.imessage-steps
   (:require
+    [clojure.edn :as edn]
     [clojure.string :as str]
     [gherclj.core :as g :refer [defgiven defwhen defthen helper!]]
     [isaac.comm.delivery.worker :as worker]
@@ -136,10 +137,37 @@
                          :else                     raw)]
           (g/should= expected actual))))))
 
+(defn imessage-lifecycle-setup []
+  (root-steps/in-memory-state "target/test-state")
+  (let [coord {:local/root (System/getProperty "user.dir")}
+        path  (str (g/get :root) "/config/isaac.edn")
+        fs*   (or (g/get :mem-fs) (nexus/get :fs) (fs/real-fs))
+        cfg   {:server     {:hot-reload true}
+               :modules    {:isaac.comm.imessage coord}
+               :defaults   {:crew "main" :model "grover"}
+               :models     {:grover {:model "echo" :provider :grover :context-window 32768}}
+               :providers  {:grover {}}
+               :crew       {:main {:model :grover :soul "You are Atticus."}}}]
+    (fs/mkdirs fs* (fs/parent path))
+    (fs/spit fs* path (pr-str cfg))
+    (g/assoc! :server-config cfg)))
+
+(defn- persist-imessage-module! [coord]
+  (when-let [root (g/get :root)]
+    (let [path (str root "/config/isaac.edn")
+          fs*  (or (g/get :mem-fs) (nexus/get :fs) (fs/real-fs))
+          cfg  (if (fs/exists? fs* path)
+                 (edn/read-string (fs/slurp fs* path))
+                 {})]
+      (fs/mkdirs fs* (fs/parent path))
+      (fs/spit fs* path (pr-str (assoc-in cfg [:modules :isaac.comm.imessage] coord))))))
+
 (defn imessage-module-is-declared []
-  (g/update! :server-config
-             #(update (or % {}) :modules
-                      (fn [m] (merge {:isaac.comm.imessage {:local/root "."}} m)))))
+  (let [coord {:local/root (System/getProperty "user.dir")}]
+    (g/update! :server-config
+               #(update (or % {}) :modules
+                        (fn [m] (merge {:isaac.comm.imessage coord} m))))
+    (persist-imessage-module! coord)))
 
 (defn imessage-isaac-server-started []
   ;; Lazy: server-steps only exists on the :features classpath.
@@ -200,6 +228,10 @@
    full notification handler, dispatching each work-item into Isaac's
    turn machinery and enqueuing replies. Captures grover/last-request
    into :llm-request.")
+
+(defgiven "iMessage lifecycle setup" isaac.comm.imessage.imessage-steps/imessage-lifecycle-setup
+  "In-memory Isaac root with inline Grover config (no per-entity files),
+   hot-reload enabled, and the imessage module declared for discover!.")
 
 (defgiven "the imessage module is declared" isaac.comm.imessage.imessage-steps/imessage-module-is-declared
   "Adds the imessage module to :server-config :modules so the
