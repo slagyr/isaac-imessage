@@ -23,9 +23,9 @@
                                                                :git/sha "8b47fe2162db2159f60d6754b109b4f388ddc9eb"
                                                                :deps/root "spec"}
                        io.github.slagyr/isaac-server           {:git/url "https://github.com/slagyr/isaac-server.git"
-                                                                :git/sha "6ad8131"}
+                                                                :git/sha "6ad8131e04db8b2a641b092903e162298b63938f"}
                        io.github.slagyr/isaac-server-test-support {:git/url "https://github.com/slagyr/isaac-server.git"
-                                                                   :git/sha "6ad8131"
+                                                                   :git/sha "6ad8131e04db8b2a641b092903e162298b63938f"
                                                                    :deps/root "spec-support"}
                        speclj/speclj                           {:mvn/version "3.13.0"}
                        babashka/process                        {:mvn/version "0.5.22"}
