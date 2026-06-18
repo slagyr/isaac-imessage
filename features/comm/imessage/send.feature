@@ -13,7 +13,7 @@ Feature: iMessage outbound send
     Given default iMessage setup
 
   Scenario: a queued iMessage delivery is sent and removed
-    Given the EDN isaac file "comm/delivery/pending/7f3a.edn" contains:
+    Given the isaac EDN file comm/delivery/pending/7f3a.edn exists with:
       | path    | value         |
       | id      | 7f3a           |
       | comm    | imessage      |
@@ -26,7 +26,7 @@ Feature: iMessage outbound send
       | +15551234567 | Hello, world. |
 
   Scenario: an iMessage delivery to an email handle is sent
-    Given the EDN isaac file "comm/delivery/pending/9c2e.edn" contains:
+    Given the isaac EDN file comm/delivery/pending/9c2e.edn exists with:
       | path    | value             |
       | id      | 9c2e               |
       | comm    | imessage          |

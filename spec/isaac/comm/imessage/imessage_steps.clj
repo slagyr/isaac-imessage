@@ -50,7 +50,6 @@
     (g/assoc! :imessage-work-items [])))
 
 (defn imessage-delivery-worker-ticks []
-  (g/assoc! :isaac-file-phase :assert)
   (let [runtime-state-dir (g/get :root)]
     (g/assoc! :runtime-state-dir runtime-state-dir)
     (binding [fs/*fs* (or (g/get :mem-fs) fs/*fs*)]
