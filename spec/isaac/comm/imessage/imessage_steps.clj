@@ -32,6 +32,7 @@
   (->FakeImsgClient (atom [])))
 
 (defn default-imessage-setup []
+  (grover/install-test-fixture!)
   ;; Don't blow away an already-initialized state dir (e.g. default Grover
   ;; setup ran first to install LLM defaults). Otherwise initialize fresh.
   (when-not (g/get :root)
