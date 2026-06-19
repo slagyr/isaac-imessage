@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  ci-tests:
+  verify:
     runs-on: ubuntu-latest
     env:
       NO_COLOR: "1"
