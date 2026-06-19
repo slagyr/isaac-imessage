@@ -42,12 +42,28 @@
     (-destroy [_]
       (.destroy (:proc bb-proc)))))
 
+(defn- drain-stderr! [^java.io.InputStream err]
+  (doto (Thread. ^Runnable
+           (fn []
+             (try
+               (let [reader (BufferedReader. (InputStreamReader. err StandardCharsets/UTF_8))]
+                 (loop []
+                   (when-let [line (.readLine reader)]
+                     (log/debug :imsg.subprocess/stderr :line line)
+                     (recur))))
+               (catch Exception _ nil)))
+         "imsg-client-stderr")
+    (.setDaemon true)
+    (.start)))
+
 (defn- spawn-imsg!
   "Spawn `imsg rpc` with the given options. Returns a Subprocess."
   [{:keys [bin db-path]}]
   (let [args (cond-> [(or bin "imsg") "rpc"]
                      db-path (into ["--db" db-path]))
         bb   (process/process args {:in :pipe :out :pipe :err :pipe})]
+    (when-let [err (:err bb)]
+      (drain-stderr! err))
     (bb-subprocess bb)))
 
 (defn- handle-message

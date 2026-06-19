@@ -23,16 +23,35 @@
   (cond-> {:to (:target record) :text (:content record)}
           (:service record) (assoc :service (str/lower-case (:service record)))))
 
+(defn -imsg-error-message
+  "Best-effort detail from an imsg JSON-RPC error. imsg uses a generic
+   \"Internal error\" :message and puts the actionable text in :data."
+  [error]
+  (or (some-> (ex-data error) :rpc-error :data)
+      (some-> (ex-data error) :rpc-error :message)
+      (.getMessage ^Throwable error)
+      ""))
+
+(defn- imsg-error-log-fields
+  "Structured log fields for an imsg failure, optionally including slice
+   config so boot-time subscribe errors are diagnosable."
+  [error slice]
+  (cond-> {:error (-imsg-error-message error)}
+    (some? (some-> (ex-data error) :rpc-error :code))
+    (assoc :rpc-code (get-in (ex-data error) [:rpc-error :code]))
+    (:imessage/db-path slice) (assoc :imessage/db-path (:imessage/db-path slice))
+    (:imessage/bin slice) (assoc :imessage/bin (:imessage/bin slice))))
+
 (defn- classify-imsg-error [error]
-  (let [msg (or (some-> (ex-data error) :rpc-error :message)
-                (.getMessage ^Throwable error)
-                "")]
+  (let [msg (-imsg-error-message error)]
     (cond
       (re-find #"(?i)not authorized|permission|unknown buddy|invalid handle|no such" msg)
       {:ok false :transient? false :error msg}
 
       :else
       {:ok false :transient? true :error msg})))
+
+(defn -classify-imsg-error [error] (classify-imsg-error error))
 
 (defn send! [client record]
   (let [result (deref (imsg-client/request! client "send" (imsg-params record))
@@ -236,20 +255,22 @@
                      :error (.getMessage e)
                      :chat-guid (get-in work-item [:origin :chat-guid])))))))
 
-(defn- subscribe-to-inbound! [client]
+(defn- subscribe-to-inbound! [client slice]
   (try
     (let [result (deref (imsg-client/request! client "watch.subscribe" {}) 5000 ::timeout)]
       (cond
         (= ::timeout result)
-        (log/warn :imsg.watch/subscribe-timeout)
+        (log/warn :imsg.watch/subscribe-timeout (imsg-error-log-fields
+                                                  (ex-info "watch.subscribe timed out" {})
+                                                  slice))
 
         (instance? Throwable result)
-        (log/error :imsg.watch/subscribe-failed :error (.getMessage ^Throwable result))
+        (log/error :imsg.watch/subscribe-failed (imsg-error-log-fields result slice))
 
         :else
         (log/info :imsg.watch/subscribed :subscription (:subscription result))))
     (catch Exception e
-      (log/error :imsg.watch/subscribe-failed :error (.getMessage e)))))
+      (log/error :imsg.watch/subscribe-failed (imsg-error-log-fields e slice)))))
 
 (declare ^:private spawn-client!)
 
@@ -270,7 +291,7 @@
         (do
           (swap! state* assoc :imsg-client client :status :started)
           (log/info :imsg.client/reconnected)
-          (subscribe-to-inbound! client))
+          (subscribe-to-inbound! client (:slice s)))
         ;; Throw so the scheduler's :retry kicks in. A normal return
         ;; would look like success and drop the task.
         (throw (ex-info "imsg reconnect failed" {}))))))
@@ -292,18 +313,33 @@
 (defn- state-atom [comm-impl]
   (.-state* comm-impl))
 
+(defn- db-path-ready? [db-path]
+  (let [f (java.io.File. (str db-path))]
+    (and (not (str/blank? db-path))
+         (.exists f)
+         (.canRead f))))
+
 (defn- spawn-client! [comm-impl host slice]
-  (when (:imessage/db-path slice)
-    (try
-      (imsg-client/start! {:bin             (:imessage/bin slice)
-                           :db-path         (:imessage/db-path slice)
-                           :on-notification (fn [n] (on-imsg-notification! comm-impl n))
-                           :on-disconnect   (fn [] (on-imsg-disconnect! comm-impl (state-atom comm-impl)))})
-      (catch Exception e
-        (log/error :imsg.client/start-failed
-                   :error (.getMessage e)
-                   :imessage/bin (:imessage/bin slice))
-        nil))))
+  (let [db-path (:imessage/db-path slice)]
+    (when db-path
+      (cond
+        (not (db-path-ready? db-path))
+        (do (log/error :imsg.client/db-path-unavailable
+                       :imessage/db-path db-path
+                       :imessage/bin (:imessage/bin slice)
+                       :detail "chat.db missing or unreadable — check path and Full Disk Access")
+            nil)
+
+        :else
+        (try
+          (imsg-client/start! {:bin             (:imessage/bin slice)
+                               :db-path         db-path
+                               :on-notification (fn [n] (on-imsg-notification! comm-impl n))
+                               :on-disconnect   (fn [] (on-imsg-disconnect! comm-impl (state-atom comm-impl)))})
+          (catch Exception e
+            (log/error :imsg.client/start-failed
+                       (imsg-error-log-fields e slice))
+            nil))))))
 
 (deftype ImessageComm [host state*]
   comm/Comm
@@ -342,7 +378,7 @@
                      (spawn-client! this host slice))]
       (swap! state* assoc :imsg-client client)
       (when client
-        (subscribe-to-inbound! client))))
+        (subscribe-to-inbound! client slice))))
   (on-config-change! [_ old-slice new-slice]
     (swap! state* assoc :slice new-slice :status :changed :prior old-slice))
   (on-unload [_ old-slice]

@@ -3,7 +3,9 @@
     [clojure.string :as str]
     [isaac.api]
     [isaac.comm.imessage :as sut]
-    [isaac.comm.imessage.imsg-client]
+    [isaac.comm.imessage.imsg-client :as imsg-client]
+    [isaac.logger :as log]
+    [isaac.reconfigurable :as reconfigurable]
     [speclj.core :refer :all]))
 
 (defn- fake-client [calls]
@@ -15,7 +17,72 @@
     (-stop!   [_] nil)
     (-alive?-client [_] true)))
 
+(describe "imsg RPC error detail"
+
+  (it "prefers rpc-error :data over the generic Internal error message"
+    (let [err (ex-info "Internal error"
+                         {:type      :imsg/error
+                          :rpc-error {:code    -32603
+                                      :message "Internal error"
+                                      :data    "Permission Error: cannot open /Users/zane/Library/Messages/chat.db — grant Full Disk Access"}})]
+      (should (str/includes? (sut/-imsg-error-message err) "Full Disk Access"))
+      (should (str/includes? (sut/-imsg-error-message err) "chat.db"))))
+
+  (it "falls back to rpc-error :message when :data is absent"
+    (let [err (ex-info "Method not found"
+                         {:type      :imsg/error
+                          :rpc-error {:code -32601 :message "Method not found"}})]
+      (should= "Method not found" (sut/-imsg-error-message err))))
+
+  (it "logs subscribe failure with rpc detail and slice context"
+    (let [calls  (atom [])
+          client (reify isaac.comm.imessage.imsg-client/Client
+                   (-request! [_ method params]
+                     (swap! calls conj {:method method :params params})
+                     (if (= "watch.subscribe" method)
+                       (doto (promise)
+                         (deliver (ex-info "Internal error"
+                                           {:type      :imsg/error
+                                            :rpc-error {:code    -32603
+                                                        :message "Internal error"
+                                                        :data    "Permission Error: grant Full Disk Access"}})))
+                       (doto (promise) (deliver {:ok true}))))
+                   (-notify! [_ _ _] nil)
+                   (-stop!   [_] nil)
+                   (-alive?-client [_] true))
+          slice  {:imessage/service "iMessage"
+                  :imessage/db-path "/Users/zane/Library/Messages/chat.db"
+                  :imessage/bin     "/usr/local/bin/imsg"}]
+      (log/capture-logs
+        (reconfigurable/on-load (sut/make {:name "imessage" :imsg-client client}) slice))
+      (let [entry (first (filter #(= :imsg.watch/subscribe-failed (:event %)) @log/captured-logs))]
+        (should (some? entry))
+        (should (str/includes? (:error entry) "Full Disk Access"))
+        (should= -32603 (:rpc-code entry))
+        (should= "/Users/zane/Library/Messages/chat.db" (:imessage/db-path entry))
+        (should= "/usr/local/bin/imsg" (:imessage/bin entry)))))
+
+  (it "skips imsg spawn when db-path is missing on disk"
+    (let [started (atom false)]
+      (with-redefs [imsg-client/start! (fn [_] (reset! started true) ::client)]
+        (log/capture-logs
+          (reconfigurable/on-load
+            (sut/make {:name "imessage"})
+            {:imessage/service "iMessage"
+             :imessage/db-path "/no/such/chat.db"})))
+      (should= false @started)
+      (should (some #(= :imsg.client/db-path-unavailable (:event %)) @log/captured-logs)))))
+
 (describe "iMessage outbound translation"
+
+  (it "classifies permission errors surfaced in rpc-error :data as permanent"
+    (let [err (ex-info "Internal error"
+                         {:type      :imsg/error
+                          :rpc-error {:code    -32603
+                                      :message "Internal error"
+                                      :data    "Permission Error: grant Full Disk Access to read chat.db"}})]
+      (should= {:ok false :transient? false :error (sut/-imsg-error-message err)}
+               (sut/-classify-imsg-error err))))
 
   (it "translates a delivery record into imsg send params (lowercased service)"
     (let [calls (atom [])]

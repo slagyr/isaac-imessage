@@ -63,17 +63,19 @@
       (should= false @started)))
 
   (it "spawns imsg client on startup when db-path is configured"
-    (let [started (atom nil)]
+    (let [started (atom nil)
+          db-path "/tmp/isaac-imessage-chat.db"]
+      (.createNewFile (java.io.File. db-path))
       (with-redefs [imsg-client/start!  (fn [opts] (reset! started opts) ::client)
                     imsg-client/request! (stub-request! {:subscription 1})]
         (sut/start! {:port               0
                      :root               "/tmp/isaac-imessage-db"
                      :cfg                (cfg-with-imessage
                                          {:comms {:imessage {:imessage/service "iMessage"
-                                                             :imessage/db-path "/tmp/chat.db"}}})
+                                                             :imessage/db-path db-path}}})
                      :start-http-server? false})
         (helper/await-condition #(some? @started) 6000)
-        (should= "/tmp/chat.db" (:db-path @started))
+        (should= db-path (:db-path @started))
         (sut/stop!))))
 
   (it "updates the live comm slice when config changes via hot-reload"
@@ -105,17 +107,19 @@
 
   (it "stops imsg client and removes comm when slot is deleted via config hot-reload"
     (let [source  (change-source/memory-source "/tmp/isaac-imessage-remove/.isaac")
-          stopped (atom nil)]
+          stopped (atom nil)
+          db-path "/tmp/isaac-imessage-remove-chat.db"]
+      (.createNewFile (java.io.File. db-path))
       (binding [fs/*fs* (fs/mem-fs)]
         (fs/mkdirs fs/*fs* "/tmp/isaac-imessage-remove/.isaac/config")
         (fs/spit fs/*fs* "/tmp/isaac-imessage-remove/.isaac/config/isaac.edn"
                  (config-edn {:comms {:imessage {:imessage/service "iMessage"
-                                                 :imessage/db-path "/tmp/chat.db"}}}))
+                                                 :imessage/db-path db-path}}}))
         (with-redefs [imsg-client/start!  (fn [_] ::client)
                       imsg-client/stop!   (fn [client] (reset! stopped client))
                       imsg-client/request! (stub-request! {:subscription 1})]
           (sut/start! {:cfg                  (cfg-with-imessage {:comms {:imessage {:imessage/service "iMessage"
-                                                                                   :imessage/db-path "/tmp/chat.db"}}})
+                                                                                   :imessage/db-path db-path}}})
                        :config-change-source source
                        :fs                   fs/*fs*
                        :root                 "/tmp/isaac-imessage-remove/.isaac"
