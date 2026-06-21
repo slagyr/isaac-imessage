@@ -56,11 +56,26 @@
     (.setDaemon true)
     (.start)))
 
+(defn spawn-argv
+  "Build argv for the long-lived `imsg rpc` subprocess.
+
+   :command — full launch prefix (e.g. [\"ssh\" \"-T\" \"host\"
+              \"/usr/local/bin/imsg\"]); takes precedence over :bin.
+   :bin     — single executable when :command is absent (default \"imsg\").
+   :db-path — optional; appended as --db <path> on the machine where
+              imsg runs (local path or remote path for ssh wrappers)."
+  [{:keys [bin command db-path]}]
+  (let [base (cond
+               (seq command) (vec command)
+               (seq bin)     [bin]
+               :else         ["imsg"])]
+    (into base (cond-> ["rpc"]
+                  db-path (into ["--db" db-path])))))
+
 (defn- spawn-imsg!
   "Spawn `imsg rpc` with the given options. Returns a Subprocess."
-  [{:keys [bin db-path]}]
-  (let [args (cond-> [(or bin "imsg") "rpc"]
-                     db-path (into ["--db" db-path]))
+  [opts]
+  (let [args (spawn-argv opts)
         bb   (process/process args {:in :pipe :out :pipe :err :pipe})]
     (when-let [err (:err bb)]
       (drain-stderr! err))
@@ -152,8 +167,9 @@
   "Spawn the imsg subprocess and return a client.
 
    opts:
-     :bin             - imsg binary path (defaults to 'imsg' on PATH)
-     :db-path         - optional --db argument
+     :command         - full launch argv prefix before rpc/--db (wrapper mode)
+     :bin             - imsg binary path when :command absent (defaults to 'imsg')
+     :db-path         - optional --db argument (path on the host where imsg runs)
      :process         - inject a Subprocess directly (for tests)
      :on-notification - (fn [{:method :params}]) for push notifications
      :on-disconnect   - (fn []) called once when the subprocess exits

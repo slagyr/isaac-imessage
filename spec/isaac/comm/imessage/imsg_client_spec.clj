@@ -40,6 +40,35 @@
 
 (describe "imsg-client"
 
+  (context "spawn-argv"
+
+    (it "defaults to imsg rpc on PATH"
+      (should= ["imsg" "rpc"] (sut/spawn-argv {})))
+
+    (it "uses :bin as the executable when :command is absent"
+      (should= ["/usr/local/bin/imsg" "rpc"]
+               (sut/spawn-argv {:bin "/usr/local/bin/imsg"})))
+
+    (it "appends rpc and --db after :bin"
+      (should= ["/usr/local/bin/imsg" "rpc" "--db" "/Users/zane/Library/Messages/chat.db"]
+               (sut/spawn-argv {:bin     "/usr/local/bin/imsg"
+                                :db-path "/Users/zane/Library/Messages/chat.db"})))
+
+    (it "uses :command as the full launch prefix before rpc"
+      (should= ["ssh" "-T" "zane@mac" "/usr/local/bin/imsg" "rpc"]
+               (sut/spawn-argv {:command ["ssh" "-T" "zane@mac" "/usr/local/bin/imsg"]})))
+
+    (it "prefers :command over :bin when both are set"
+      (should= ["ssh" "-T" "zane@mac" "/usr/local/bin/imsg" "rpc"]
+               (sut/spawn-argv {:bin     "/ignored/imsg"
+                                :command ["ssh" "-T" "zane@mac" "/usr/local/bin/imsg"]})))
+
+    (it "passes --db through a wrapper command for remote Mac paths"
+      (should= ["ssh" "-T" "zane@mac" "/usr/local/bin/imsg" "rpc"
+                "--db" "/Users/zane/Library/Messages/chat.db"]
+               (sut/spawn-argv {:command ["ssh" "-T" "zane@mac" "/usr/local/bin/imsg"]
+                                :db-path "/Users/zane/Library/Messages/chat.db"}))))
+
   (context "request!"
 
     (it "returns a future that resolves when a matching result arrives"

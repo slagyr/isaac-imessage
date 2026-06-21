@@ -78,6 +78,22 @@
         (should= db-path (:db-path @started))
         (sut/stop!))))
 
+  (it "spawns imsg through a configured wrapper command without a local db-path file"
+    (let [started (atom nil)
+          command ["ssh" "-T" "zane@mac" "/usr/local/bin/imsg"]]
+      (with-redefs [imsg-client/start!  (fn [opts] (reset! started opts) ::client)
+                    imsg-client/request! (stub-request! {:subscription 1})]
+        (sut/start! {:port               0
+                     :root               "/tmp/isaac-imessage-wrap"
+                     :cfg                (cfg-with-imessage
+                                         {:comms {:imessage {:imessage/service  "iMessage"
+                                                             :imessage/db-path  "/Users/zane/Library/Messages/chat.db"
+                                                             :imessage/command command}}})
+                     :start-http-server? false})
+        (helper/await-condition #(some? @started) 6000)
+        (should= command (:command @started))
+        (sut/stop!))))
+
   (it "updates the live comm slice when config changes via hot-reload"
     (let [source (change-source/memory-source "/tmp/isaac-imessage-reload/.isaac")]
       (binding [fs/*fs* (fs/mem-fs)]

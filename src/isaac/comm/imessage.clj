@@ -40,6 +40,7 @@
     (some? (some-> (ex-data error) :rpc-error :code))
     (assoc :rpc-code (get-in (ex-data error) [:rpc-error :code]))
     (:imessage/db-path slice) (assoc :imessage/db-path (:imessage/db-path slice))
+    (:imessage/command slice) (assoc :imessage/command (:imessage/command slice))
     (:imessage/bin slice) (assoc :imessage/bin (:imessage/bin slice))))
 
 (defn- classify-imsg-error [error]
@@ -319,11 +320,15 @@
          (.exists f)
          (.canRead f))))
 
+(defn- wrapped-command? [slice]
+  (seq (:imessage/command slice)))
+
 (defn- spawn-client! [comm-impl host slice]
   (let [db-path (:imessage/db-path slice)]
     (when db-path
       (cond
-        (not (db-path-ready? db-path))
+        (and (not (wrapped-command? slice))
+             (not (db-path-ready? db-path)))
         (do (log/error :imsg.client/db-path-unavailable
                        :imessage/db-path db-path
                        :imessage/bin (:imessage/bin slice)
@@ -333,6 +338,7 @@
         :else
         (try
           (imsg-client/start! {:bin             (:imessage/bin slice)
+                               :command         (:imessage/command slice)
                                :db-path         db-path
                                :on-notification (fn [n] (on-imsg-notification! comm-impl n))
                                :on-disconnect   (fn [] (on-imsg-disconnect! comm-impl (state-atom comm-impl)))})

@@ -71,7 +71,40 @@
             {:imessage/service "iMessage"
              :imessage/db-path "/no/such/chat.db"})))
       (should= false @started)
-      (should (some #(= :imsg.client/db-path-unavailable (:event %)) @log/captured-logs)))))
+      (should (some #(= :imsg.client/db-path-unavailable (:event %)) @log/captured-logs)))
+
+  (it "spawns through a wrapper command without checking db-path on the local disk"
+    (let [started (atom nil)]
+      (with-redefs [imsg-client/start! (fn [opts] (reset! started opts) ::client)
+                    imsg-client/request! (fn [_ _ _] (doto (promise) (deliver {:subscription 1})))]
+        (reconfigurable/on-load
+          (sut/make {:name "imessage"})
+          {:imessage/service  "iMessage"
+           :imessage/db-path  "/Users/zane/Library/Messages/chat.db"
+           :imessage/command ["ssh" "-T" "zane@mac" "/usr/local/bin/imsg"]}))
+      (should= ["ssh" "-T" "zane@mac" "/usr/local/bin/imsg"]
+               (:command @started))
+      (should= "/Users/zane/Library/Messages/chat.db" (:db-path @started)))))
+
+  (it "logs subscribe failure with command context when a wrapper is configured"
+    (let [calls  (atom [])
+          client (reify isaac.comm.imessage.imsg-client/Client
+                   (-request! [_ method params]
+                     (swap! calls conj {:method method :params params})
+                     (if (= "watch.subscribe" method)
+                       (doto (promise)
+                         (deliver (ex-info "boom" {:type :imsg/error :rpc-error {:message "boom"}})))
+                       (doto (promise) (deliver {:ok true}))))
+                   (-notify! [_ _ _] nil)
+                   (-stop!   [_] nil)
+                   (-alive?-client [_] true))
+          slice  {:imessage/service  "iMessage"
+                  :imessage/db-path  "/Users/zane/Library/Messages/chat.db"
+                  :imessage/command ["ssh" "-T" "zane@mac" "/usr/local/bin/imsg"]}]
+      (log/capture-logs
+        (reconfigurable/on-load (sut/make {:name "imessage" :imsg-client client}) slice))
+      (let [entry (first (filter #(= :imsg.watch/subscribe-failed (:event %)) @log/captured-logs))]
+        (should= ["ssh" "-T" "zane@mac" "/usr/local/bin/imsg"] (:imessage/command entry))))))
 
 (describe "iMessage outbound translation"
 

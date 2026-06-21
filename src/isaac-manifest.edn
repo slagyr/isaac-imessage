@@ -9,7 +9,10 @@
                             :imessage/db-path     {:type        :string
                                                    :description "Absolute path to Messages chat.db (typically /Users/<you>/Library/Messages/chat.db). Required to spawn the imsg subprocess; omitting it leaves the comm off so tests don't accidentally hit a real chat.db."}
                             :imessage/bin         {:type        :string
-                                                   :description "Path to the imsg binary (e.g. /usr/local/bin/imsg). Defaults to whatever is on PATH; set explicitly when the running shell PATH doesn't include /usr/local/bin (common for headless processes)."}
+                                                   :description "Path to the imsg binary (e.g. /usr/local/bin/imsg). Defaults to whatever is on PATH; set explicitly when the running shell PATH doesn't include /usr/local/bin (common for headless processes). Ignored when :imessage/command is set."}
+                            :imessage/command     {:type        :seq
+                                                   :spec        {:type :string}
+                                                   :description "Full argv prefix before imsg rpc/--db (e.g. [\"ssh\" \"-T\" \"user@mac\" \"/usr/local/bin/imsg\"]). Use for stdio wrappers that tunnel JSON-RPC to a remote Mac; takes precedence over :imessage/bin."}
                             :imessage/message-cap {:type        :int
                                                    :description "Chunk reply text into separate sends above this character count. Defaults to 2000."}
                             :imessage/max-chunks  {:type        :int

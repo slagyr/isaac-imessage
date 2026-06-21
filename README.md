@@ -60,7 +60,20 @@ might inject into the same map.
 - `:imessage/bin` — path to the imsg binary. Defaults to whatever's
   on `PATH`; set explicitly when the process launching isaac
   doesn't see `/usr/local/bin` or `/opt/homebrew/bin` (common for
-  headless processes like launchd jobs).
+  headless processes like launchd jobs). Ignored when
+  `:imessage/command` is set.
+- `:imessage/command` — optional vector of strings forming the full
+  launch prefix before `rpc` and `--db`. Use this to run imsg through
+  a stdio wrapper (for example SSH to a remote Mac):
+
+  ```clojure
+  :imessage/command ["ssh" "-T" "zane@zanebot.example.com" "/usr/local/bin/imsg"]
+  ```
+
+  Isaac appends `rpc` and, when configured, `--db <path>` to this
+  prefix. With a wrapper, `:imessage/db-path` is the path **on the
+  machine where imsg runs** (not checked for local existence); omit
+  the wrapper to keep the default local chat.db readiness check.
 - `:imessage/allow-from` — phone numbers / emails (string allowlist).
   Notifications from senders not in this list are dropped at
   debug log level (`:imessage.intake/drop-sender`).
