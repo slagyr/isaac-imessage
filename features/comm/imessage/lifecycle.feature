@@ -18,6 +18,7 @@ Feature: iMessage comm lifecycle
     And the log has entries matching:
       | event           | comm     |
       | :comm/activated | imessage |
+    And the comm "imessage" is registered for delivery
 
   Scenario: comm is removed when comms.imessage config is removed
     Given config:
@@ -27,6 +28,7 @@ Feature: iMessage comm lifecycle
       | path           | value   |
       | comms.imessage | #delete |
     Then the comm "imessage" does not exist
+    And the comm "imessage" is not registered for delivery
 
   Scenario: a config change updates the live comm without restart
     Given config:

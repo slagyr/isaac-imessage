@@ -2,6 +2,7 @@
   (:require
     [isaac.comm.imessage :as imessage]
     [isaac.comm.imessage.imessage-steps :as steps]
+    [isaac.comm.registry :as comm-registry]
     [isaac.configurator-steps :as cfg-steps]
     [isaac.nexus :as nexus]
     [isaac.spec-helper :as helper]
@@ -11,6 +12,15 @@
 
 (describe "lifecycle feature wiring"
   (after ((requiring-resolve 'isaac.server.app/stop!)))
+
+  (it "registers the comm in comm-registry for delivery on server start"
+    (steps/imessage-lifecycle-setup)
+    ((requiring-resolve 'isaac.server.server-steps/configure)
+      {:headers ["path" "value"]
+       :rows [["comms.imessage.imessage/service" "iMessage"]]})
+    (steps/imessage-isaac-server-started)
+    (should (some? (nexus/get-in [:comms :imessage])))
+    (should (some? (comm-registry/comm-for "imessage"))))
 
   (it "hot-reload removes comm when slot deleted"
     (steps/imessage-lifecycle-setup)
@@ -22,7 +32,8 @@
     (cfg-steps/config-updated
       {:headers ["path" "value"]
        :rows [["comms.imessage" "#delete"]]})
-    (should-be-nil (nexus/get-in [:comms :imessage])))
+    (should-be-nil (nexus/get-in [:comms :imessage]))
+    (should-be-nil (comm-registry/comm-for "imessage")))
 
   (it "hot-reload updates message-cap in place"
     (steps/imessage-lifecycle-setup)

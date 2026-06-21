@@ -11,6 +11,7 @@
     [isaac.config.loader :as loader]
     [isaac.foundation.root-steps :as root-steps]
     [isaac.fs :as fs]
+    [isaac.spec-helper :as helper]
     [isaac.llm.api.grover :as grover]
     [isaac.reconfigurable :as reconfigurable]
     [isaac.step-tables :as match]
@@ -175,6 +176,14 @@
   ;; Lazy: server-steps only exists on the :features classpath.
   ((requiring-resolve 'isaac.server.server-steps/server-running)))
 
+(defn comm-registered-for-delivery [name]
+  (helper/await-condition #(some? (comm-registry/comm-for name)) 5000)
+  (g/should-not-be-nil (comm-registry/comm-for name)))
+
+(defn comm-not-registered-for-delivery [name]
+  (helper/await-condition #(nil? (comm-registry/comm-for name)) 5000)
+  (g/should-be-nil (comm-registry/comm-for name)))
+
 (defn imessage-message-cap-is [n]
   (update-imessage-slice! #(assoc % :imessage/message-cap n)))
 
@@ -247,6 +256,13 @@
 (defthen "the imessage comm has state:" isaac.comm.imessage.imessage-steps/imessage-comm-has-state
   "Asserts the iMessage Comm's internal state map matches each row
    (dotted path -> value).")
+
+(defthen "the comm {name:string} is registered for delivery" isaac.comm.imessage.imessage-steps/comm-registered-for-delivery
+  "Asserts the live comm slot is registered in comm-registry for the
+   delivery worker (berth :register-fn on create).")
+
+(defthen "the comm {name:string} is not registered for delivery" isaac.comm.imessage.imessage-steps/comm-not-registered-for-delivery
+  "Asserts the comm slot was deregistered from comm-registry on teardown.")
 
 (defgiven "comms.imessage.message-cap is {n:int}" isaac.comm.imessage.imessage-steps/imessage-message-cap-is
   "Updates the registered comm's slice with :message-cap.")
