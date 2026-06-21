@@ -80,6 +80,31 @@ might inject into the same map.
   **Fail-closed**: an empty list drops everything; omit
   `:imessage/allow-from` to skip filtering entirely.
 
+#### Remote Mac via SSH
+
+If the machine running Isaac cannot reliably send Apple Events to
+Messages under launchd, move the `imsg` boundary onto a different
+logged-in Mac and tunnel stdio over SSH:
+
+```clojure
+{:comms {:imessage {:imessage/command    ["ssh" "-T" "zane@zanebot.example.com" "/usr/local/bin/imsg"]
+                    :imessage/db-path    "/Users/zane/Library/Messages/chat.db"
+                    :imessage/service    "iMessage"
+                    :imessage/allow-from ["friend@icloud.com"]}}}
+```
+
+This does not "fix" TCC on the local Isaac host. It avoids the local
+permission boundary by running `imsg` on the remote Mac instead. In
+that setup:
+
+- the remote Mac must be logged in to Messages and hold the needed
+  Full Disk Access / Automation grants
+- `:imessage/db-path` is the remote machine's `chat.db` path
+- the local Isaac host only needs SSH access to the remote `imsg`
+  command
+- same-host self-SSH is possible in principle, but a separate Messages
+  Mac is the cleaner deployment
+
 Optional:
 
 - `:imessage/message-cap` — split replies above this character count
@@ -110,6 +135,14 @@ send fails with `Not authorized to send Apple events`, you
 haven't granted Automation. If the chat.db read prints
 `exit=1 err=unable to open database`, you haven't granted Full
 Disk Access.
+
+When using `:imessage/command` with an SSH wrapper, run the equivalent
+probe against the remote Mac instead of relying on the local `bb smoke`
+result. For example:
+
+```sh
+ssh -T zane@zanebot.example.com /usr/local/bin/imsg send --to +15551234567 --text "remote smoke" --service imessage --json
+```
 
 ### 4. Start Isaac
 
