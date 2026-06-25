@@ -1,7 +1,10 @@
 (ns isaac.comm.imessage-spec
   (:require
+    [clojure.edn :as edn]
+    [clojure.java.io :as io]
     [clojure.string :as str]
     [isaac.api]
+    [isaac.comm.delivery.queue :as queue]
     [isaac.comm.imessage :as sut]
     [isaac.comm.imessage.imsg-client :as imsg-client]
     [isaac.logger :as log]
@@ -106,6 +109,28 @@
       (let [entry (first (filter #(= :imsg.watch/subscribe-failed (:event %)) @log/captured-logs))]
         (should= ["ssh" "-T" "zane@mac" "/usr/local/bin/imsg"] (:imessage/command entry))))))
 
+(describe "iMessage delivery record shape"
+
+  (it "declares namespaced :send-schema on the manifest"
+    (let [manifest (edn/read-string (slurp (io/resource "isaac-manifest.edn")))
+          schema   (get-in manifest [:isaac.server/comm :imessage :send-schema])]
+      (should= #{:imessage/target :imessage/service} (set (keys schema)))))
+
+  (it "enqueues reply chunks with :imessage/target"
+    (let [captured (atom [])]
+      (with-redefs [sut/dispatch-work-item! (fn [_ _ _]
+                                              {:response {:message {:content "hello back"}}})
+                    queue/enqueue!           (fn [record]
+                                               (swap! captured conj record)
+                                               record)]
+        (sut/dispatch-and-enqueue-reply!
+          "/test"
+          {:origin {:handle "+15551234567"}}
+          nil))
+      (should= 1 (count @captured))
+      (should= {:comm "imessage" :imessage/target "+15551234567" :content "hello back"}
+               (select-keys (first @captured) [:comm :imessage/target :content])))))
+
 (describe "iMessage outbound translation"
 
   (it "classifies permission errors surfaced in rpc-error :data as permanent"
@@ -121,9 +146,9 @@
     (let [calls (atom [])]
       (should= {:ok true}
                (sut/send! (fake-client calls)
-                          {:content "hello"
-                           :service "iMessage"
-                           :target  "+15551234567"}))
+                          {:content           "hello"
+                           :imessage/service  "iMessage"
+                           :imessage/target   "+15551234567"}))
       (should= [{:method "send"
                  :params {:to "+15551234567" :text "hello" :service "imessage"}}]
                @calls)))
@@ -131,7 +156,7 @@
   (it "omits :service when the record has none"
     (let [calls (atom [])]
       (sut/send! (fake-client calls)
-                 {:content "hi" :target "+15551234567"})
+                 {:content "hi" :imessage/target "+15551234567"})
       (should= {:to "+15551234567" :text "hi"}
                (:params (first @calls))))))
 

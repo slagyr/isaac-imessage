@@ -20,8 +20,9 @@
 ;; ===========================================================================
 
 (defn- imsg-params [record]
-  (cond-> {:to (:target record) :text (:content record)}
-          (:service record) (assoc :service (str/lower-case (:service record)))))
+  (cond-> {:to (:imessage/target record) :text (:content record)}
+          (:imessage/service record)
+          (assoc :service (str/lower-case (:imessage/service record)))))
 
 (defn -imsg-error-message
   "Best-effort detail from an imsg JSON-RPC error. imsg uses a generic
@@ -221,9 +222,9 @@
          chunks  (cap-chunks (chunk-reply-text reply max-chars) max-chunks)
          handle  (get-in work-item [:origin :handle])
          records (mapv (fn [chunk]
-                         (queue/enqueue! {:comm    "imessage"
-                                          :target  handle
-                                          :content chunk}))
+                         (queue/enqueue! {:comm              "imessage"
+                                          :imessage/target   handle
+                                          :content           chunk}))
                        chunks)]
      {:dispatch-result result :records records})))
 
@@ -362,20 +363,20 @@
   (send! [_ record]
     (let [slice   (:slice @state*)
           client  (:imsg-client @state*)
-          target  (:target record)
-          service (or (:service record) (:imessage/service slice))]
+          target  (:imessage/target record)
+          service (or (:imessage/service record) (:imessage/service slice))]
       (cond
         (nil? client)
         {:ok false :transient? true :error "imsg-client not started"}
 
         (str/blank? target)
         (do (log/error :imessage.send/no-target :record-id (:id record))
-            {:ok false :transient? false :error "delivery record has no :target"})
+            {:ok false :transient? false :error "delivery record has no :imessage/target"})
 
         :else
-        (send! client {:content (:content record)
-                       :service service
-                       :target  target}))))
+        (send! client (cond-> record
+                        (and (nil? (:imessage/service record)) service)
+                        (assoc :imessage/service service))))))
 
   reconfigurable/Reconfigurable
   (on-load [this slice]

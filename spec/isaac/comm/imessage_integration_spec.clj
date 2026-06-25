@@ -29,8 +29,8 @@
     (let [[client calls] (fake-client+calls)
           instance       (sut/make {:name "imessage-slot" :imsg-client client})]
       (reconfigurable/on-load instance {:imessage/service "E:me"})
-      (should= {:ok true} (comm/send! instance {:content "hello"
-                                                 :target  "+15551234567"}))
+      (should= {:ok true} (comm/send! instance {:content          "hello"
+                                                 :imessage/target  "+15551234567"}))
       (should= [{:method "send"
                  :params {:to "+15551234567" :text "hello" :service "e:me"}}]
                (filterv #(= "send" (:method %)) @calls))))
@@ -39,14 +39,14 @@
     (let [[client calls] (fake-client+calls)
           instance       (sut/make {:name "imessage-slot" :imsg-client client})]
       (reconfigurable/on-load instance {:imessage/service "E:me"})
-      (should= {:ok true} (comm/send! instance {:content "hello"
-                                                :service "E:other"
-                                                :target  "+15550000000"}))
+      (should= {:ok true} (comm/send! instance {:content          "hello"
+                                                :imessage/service "E:other"
+                                                :imessage/target  "+15550000000"}))
       (should= [{:method "send"
                  :params {:to "+15550000000" :text "hello" :service "e:other"}}]
                (filterv #(= "send" (:method %)) @calls))))
 
-  (it "fails loudly with permanent classification when :target is missing"
+  (it "fails loudly with permanent classification when :imessage/target is missing"
     (let [[client calls] (fake-client+calls)
           instance       (sut/make {:name "imessage-slot" :imsg-client client})]
       (reconfigurable/on-load instance {:imessage/service "E:me"})

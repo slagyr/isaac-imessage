@@ -19,4 +19,9 @@
                                                    :description "Hard cap on chunks a single reply produces. Above the cap the tail is dropped with a notice. Defaults to 3 — long replies become 3 messages, not 50."}
                             :imessage/allow-from  {:type        :seq
                                                    :spec        {:type :string}
-                                                   :description "Inbound allowlist of iMessage handles (phone numbers or emails). nil/missing = no filter; empty list = fail-closed (drops everything)."}}}}}
+                                                   :description "Inbound allowlist of iMessage handles (phone numbers or emails). nil/missing = no filter; empty list = fail-closed (drops everything)."}}
+             :send-schema  {:imessage/target  {:type        :string
+                                                :description "Recipient handle (phone number or email) for the outbound message."}
+                            :imessage/service {:type        :string
+                                               :validations [[:one-of? "iMessage" "SMS"]]
+                                               :description "Messages service name passed through to imsg. Defaults to the comm slice's :imessage/service when omitted on the delivery record."}}}}}
