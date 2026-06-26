@@ -15,10 +15,10 @@ Feature: iMessage outbound send
   Scenario: a queued iMessage delivery is sent and removed
     Given the isaac EDN file comm/delivery/pending/7f3a.edn exists with:
       | path    | value         |
-      | id      | 7f3a           |
-      | comm    | imessage      |
-      | target  | +15551234567  |
-      | content | Hello, world. |
+      | id              | 7f3a           |
+      | comm            | imessage      |
+      | imessage/target | +15551234567  |
+      | content         | Hello, world. |
     When the imessage delivery worker ticks
     Then the isaac file "comm/delivery/pending/7f3a.edn" does not exist
     And the imessage runner was invoked with:
@@ -28,10 +28,10 @@ Feature: iMessage outbound send
   Scenario: an iMessage delivery to an email handle is sent
     Given the isaac EDN file comm/delivery/pending/9c2e.edn exists with:
       | path    | value             |
-      | id      | 9c2e               |
-      | comm    | imessage          |
-      | target  | friend@icloud.com |
-      | content | Hi there.         |
+      | id              | 9c2e               |
+      | comm            | imessage          |
+      | imessage/target | friend@icloud.com |
+      | content         | Hi there.         |
     When the imessage delivery worker ticks
     Then the isaac file "comm/delivery/pending/9c2e.edn" does not exist
     And the imessage runner was invoked with:
