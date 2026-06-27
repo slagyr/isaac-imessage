@@ -95,21 +95,22 @@
         (sut/stop!))))
 
   (it "updates the live comm slice when config changes via hot-reload"
-    (let [source (change-source/memory-source "/tmp/isaac-imessage-reload/.isaac")]
-      (binding [fs/*fs* (fs/mem-fs)]
-        (fs/mkdirs fs/*fs* "/tmp/isaac-imessage-reload/.isaac/config")
-        (fs/spit fs/*fs* "/tmp/isaac-imessage-reload/.isaac/config/isaac.edn"
+    (let [source (change-source/memory-source "/tmp/isaac-imessage-reload/.isaac")
+          mem    (fs/mem-fs)]
+      (nexus/-with-nexus {:fs mem}
+        (fs/mkdirs mem "/tmp/isaac-imessage-reload/.isaac/config")
+        (fs/spit mem "/tmp/isaac-imessage-reload/.isaac/config/isaac.edn"
                  (config-edn {:comms {:imessage {:imessage/service     "iMessage"
                                                  :imessage/message-cap 2000}}}))
         (with-redefs [imsg-client/start! (fn [_] nil)]
           (sut/start! {:cfg                  (cfg-with-imessage {:comms {:imessage {:imessage/service     "iMessage"
                                                                                    :imessage/message-cap 2000}}})
                        :config-change-source source
-                       :fs                   fs/*fs*
+                       :fs                   mem
                        :root                 "/tmp/isaac-imessage-reload/.isaac"
                        :port                 0
                        :start-http-server?   false})
-          (fs/spit fs/*fs* "/tmp/isaac-imessage-reload/.isaac/config/isaac.edn"
+          (fs/spit mem "/tmp/isaac-imessage-reload/.isaac/config/isaac.edn"
                    (config-edn {:comms {:imessage {:imessage/service     "iMessage"
                                                    :imessage/message-cap 500}}}))
           (change-source/notify-path! source "/tmp/isaac-imessage-reload/.isaac/config/isaac.edn")
@@ -126,9 +127,10 @@
           stopped (atom nil)
           db-path "/tmp/isaac-imessage-remove-chat.db"]
       (.createNewFile (java.io.File. db-path))
-      (binding [fs/*fs* (fs/mem-fs)]
-        (fs/mkdirs fs/*fs* "/tmp/isaac-imessage-remove/.isaac/config")
-        (fs/spit fs/*fs* "/tmp/isaac-imessage-remove/.isaac/config/isaac.edn"
+      (let [mem (fs/mem-fs)]
+       (nexus/-with-nexus {:fs mem}
+        (fs/mkdirs mem "/tmp/isaac-imessage-remove/.isaac/config")
+        (fs/spit mem "/tmp/isaac-imessage-remove/.isaac/config/isaac.edn"
                  (config-edn {:comms {:imessage {:imessage/service "iMessage"
                                                  :imessage/db-path db-path}}}))
         (with-redefs [imsg-client/start!  (fn [_] ::client)
@@ -137,14 +139,14 @@
           (sut/start! {:cfg                  (cfg-with-imessage {:comms {:imessage {:imessage/service "iMessage"
                                                                                    :imessage/db-path db-path}}})
                        :config-change-source source
-                       :fs                   fs/*fs*
+                       :fs                   mem
                        :root                 "/tmp/isaac-imessage-remove/.isaac"
                        :port                 0
                        :start-http-server?   false})
           (helper/await-condition #(some? (live-imessage)) 6000)
-          (fs/spit fs/*fs* "/tmp/isaac-imessage-remove/.isaac/config/isaac.edn"
+          (fs/spit mem "/tmp/isaac-imessage-remove/.isaac/config/isaac.edn"
                    (config-edn {:comms {}}))
           (change-source/notify-path! source "/tmp/isaac-imessage-remove/.isaac/config/isaac.edn")
           (helper/await-condition #(nil? (live-imessage)) 6000)
-          (sut/stop!)))
+          (sut/stop!))))
       (should= ::client @stopped))))

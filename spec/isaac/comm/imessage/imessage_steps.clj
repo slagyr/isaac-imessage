@@ -56,9 +56,9 @@
 (defn imessage-delivery-worker-ticks []
   (let [runtime-state-dir (g/get :root)]
     (g/assoc! :runtime-state-dir runtime-state-dir)
-    (binding [fs/*fs* (or (g/get :mem-fs) fs/*fs*)]
-      (nexus/-with-nexus {:root runtime-state-dir}
-                         (worker/tick! {})))))
+    (nexus/-with-nexus {:fs   (or (g/get :mem-fs) (nexus/get :fs) (fs/real-fs))
+                        :root runtime-state-dir}
+                       (worker/tick! {}))))
 
 (defn- imessage-slice []
   (or (some-> (g/get :imessage-instance) imessage/state :slice) {}))
@@ -109,7 +109,7 @@
 
 (defn imessage-inbox-is-polled-and-dispatched []
   (grover/clear-provider-requests!)
-  (binding [fs/*fs* (or (g/get :mem-fs) fs/*fs*)]
+  (nexus/-with-nexus {:fs (or (g/get :mem-fs) (nexus/get :fs) (fs/real-fs))}
     (let [cfg   (:config (loader/load-config-result {:root (g/get :root)}))
           _     (config/dangerously-install-config! cfg "imessage feature")
           table (g/get :imessage-test-rows)
