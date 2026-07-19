@@ -1,6 +1,6 @@
-# isaac-imessage
+# 🍏 Isaac iMessage 💬
 
-[![CI Tests](https://github.com/slagyr/isaac-imessage/actions/workflows/ci.yml/badge.svg)](https://github.com/slagyr/isaac-imessage/actions/workflows/ci.yml)
+<img align="left" width="200" src="https://raw.githubusercontent.com/slagyr/isaac-imessage/main/isaac-imessage.png" alt="isaac-imessage" style="margin-right: 20px; margin-bottom: 10px;">
 
 Bi-directional iMessage support for Isaac.
 
@@ -8,6 +8,16 @@ Runs as an Isaac module on a macOS host that is logged into the
 Messages app. Inbound messages are polled from
 `~/Library/Messages/chat.db` and dispatched to the configured crew;
 outbound replies are sent through Messages via `osascript`.
+
+<br>
+
+[![CI Tests](https://github.com/slagyr/isaac-imessage/actions/workflows/ci-tests.yml/badge.svg)](https://github.com/slagyr/isaac-imessage/actions/workflows/ci-tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Clojure](https://img.shields.io/badge/Clojure-1.11%2B-blue?logo=clojure)](https://clojure.org)
+[![Babashka](https://img.shields.io/badge/Babashka-1.3%2B-red?logo=clojure)](https://babashka.org)
+[![Java](https://img.shields.io/badge/Java-21%2B-orange?logo=openjdk)](https://openjdk.org/)
+
+<br clear="left">
 
 See:
 
