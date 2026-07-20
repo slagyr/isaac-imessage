@@ -10,23 +10,26 @@
 
 (helper/with-captured-logs)
 
+(defn- apply-config! [rows]
+  ;; Prefer server-config-applied (current), fall back to configure (legacy pin).
+  (let [apply-fn (or (requiring-resolve 'isaac.server.server-steps/server-config-applied)
+                     (requiring-resolve 'isaac.server.server-steps/configure))]
+    (apply-fn {:headers ["key" "value"]
+               :rows    rows})))
+
 (describe "lifecycle feature wiring"
   (after ((requiring-resolve 'isaac.server.app/stop!)))
 
   (it "registers the comm in comm-registry for delivery on server start"
     (steps/imessage-lifecycle-setup)
-    ((requiring-resolve 'isaac.server.server-steps/configure)
-      {:headers ["path" "value"]
-       :rows [["comms.imessage.imessage/service" "iMessage"]]})
+    (apply-config! [["comms.imessage.imessage/service" "iMessage"]])
     (steps/imessage-isaac-server-started)
     (should (some? (nexus/get-in [:comms :imessage])))
     (should (some? (comm-registry/comm-for "imessage"))))
 
   (it "hot-reload removes comm when slot deleted"
     (steps/imessage-lifecycle-setup)
-    ((requiring-resolve 'isaac.server.server-steps/configure)
-      {:headers ["path" "value"]
-       :rows [["comms.imessage.imessage/service" "iMessage"]]})
+    (apply-config! [["comms.imessage.imessage/service" "iMessage"]])
     (steps/imessage-isaac-server-started)
     (should (some? (nexus/get-in [:comms :imessage])))
     (cfg-steps/config-updated
@@ -37,10 +40,8 @@
 
   (it "hot-reload updates message-cap in place"
     (steps/imessage-lifecycle-setup)
-    ((requiring-resolve 'isaac.server.server-steps/configure)
-      {:headers ["path" "value"]
-       :rows [["comms.imessage.imessage/service" "iMessage"]
-              ["comms.imessage.imessage/message-cap" "2000"]]})
+    (apply-config! [["comms.imessage.imessage/service" "iMessage"]
+                    ["comms.imessage.imessage/message-cap" "2000"]])
     (steps/imessage-isaac-server-started)
     (cfg-steps/config-updated
       {:headers ["path" "value"]

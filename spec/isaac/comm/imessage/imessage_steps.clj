@@ -14,6 +14,8 @@
     [isaac.spec-helper :as helper]
     [isaac.llm.api.grover :as grover]
     [isaac.reconfigurable :as reconfigurable]
+    [isaac.session.store.memory :as memory-store]
+    [isaac.session.store.spi :as session-store]
     [isaac.step-tables :as match]
     [isaac.nexus :as nexus]))
 
@@ -32,6 +34,18 @@
 (defn- fake-imsg-client []
   (->FakeImsgClient (atom [])))
 
+(defn- feature-fs []
+  (or (g/get :mem-fs) (nexus/get :fs) (fs/real-fs)))
+
+(defn- ensure-session-store!
+  "Register an in-memory SessionStore when the scenario harness has not
+   already installed one (e.g. default Grover setup ran without the
+   agent session-steps root hook on the classpath)."
+  []
+  (when-not (session-store/registered-store)
+    (when-let [root (g/get :root)]
+      (session-store/register-store! (memory-store/create-store root)))))
+
 (defn default-imessage-setup []
   ;; Grover is a config-driven test provider now; the removed
   ;; install-test-fixture! only reset the response queue.
@@ -40,6 +54,7 @@
   ;; setup ran first to install LLM defaults). Otherwise initialize fresh.
   (when-not (g/get :root)
     (root-steps/in-memory-state "target/test-state"))
+  (ensure-session-store!)
   (let [client   (fake-imsg-client)
         host     {:name      "imessage"
                   :imsg-client client
@@ -56,9 +71,9 @@
 (defn imessage-delivery-worker-ticks []
   (let [runtime-state-dir (g/get :root)]
     (g/assoc! :runtime-state-dir runtime-state-dir)
-    (nexus/-with-nexus {:fs   (or (g/get :mem-fs) (nexus/get :fs) (fs/real-fs))
-                        :root runtime-state-dir}
-                       (worker/tick! {}))))
+    (nexus/-with-nested-nexus {:fs   (feature-fs)
+                               :root runtime-state-dir}
+      (worker/tick! {}))))
 
 (defn- imessage-slice []
   (or (some-> (g/get :imessage-instance) imessage/state :slice) {}))
@@ -86,13 +101,19 @@
 
 (defn- push-notifications! [headers rows dispatch?]
   (let [comm-impl (comm-registry/comm-for "imessage")
-        slice     (imessage-slice)]
+        slice     (imessage-slice)
+        state-dir (g/get :root)
+        max-chars (or (:imessage/message-cap slice) 2000)
+        max-chunks (or (:imessage/max-chunks slice) 3)]
     (->> rows
          (map #(row->notification headers %))
          (keep (fn [notification]
                  (when-let [work-item (imessage/notification->work-item slice notification)]
                    (when dispatch?
-                     (imessage/on-imsg-notification! comm-impl notification))
+                     ;; Call the dispatch pipeline directly so feature
+                     ;; failures surface (on-imsg-notification! swallows).
+                     (imessage/dispatch-and-enqueue-reply!
+                       state-dir work-item comm-impl max-chars max-chunks))
                    work-item)))
          vec)))
 
@@ -109,13 +130,17 @@
 
 (defn imessage-inbox-is-polled-and-dispatched []
   (grover/clear-provider-requests!)
-  (nexus/-with-nexus {:fs (or (g/get :mem-fs) (nexus/get :fs) (fs/real-fs))}
-    (let [cfg   (:config (loader/load-config-result {:root (g/get :root)}))
-          _     (config/dangerously-install-config! cfg "imessage feature")
-          table (g/get :imessage-test-rows)
-          items (push-notifications! (:headers table) (:rows table) true)]
-      (g/assoc! :imessage-work-items items)
-      (g/assoc! :llm-request (grover/last-request)))))
+  (ensure-session-store!)
+  (let [fs*   (feature-fs)
+        root  (g/get :root)
+        table (g/get :imessage-test-rows)]
+    ;; Nested — preserve :sessions/:config already installed by setup.
+    (nexus/-with-nested-nexus {:fs fs* :root root}
+      (let [cfg   (:config (loader/load-config-result {:root root :fs fs*}))
+            _     (config/dangerously-install-config! cfg "imessage feature")
+            items (push-notifications! (:headers table) (:rows table) true)]
+        (g/assoc! :imessage-work-items items)
+        (g/assoc! :llm-request (grover/last-request))))))
 
 (defn- live-imessage-instance []
   (or (g/get :imessage-instance)

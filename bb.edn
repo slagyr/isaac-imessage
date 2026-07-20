@@ -25,17 +25,17 @@
                                              :git/sha "43cf46e00087bf066a9e065ccc3d48dd2814ac23"
                                              :deps/root "modules/marigold.longwave"}
         io.github.slagyr/isaac-agent {:git/url "https://github.com/slagyr/isaac-agent.git"
-                                      :git/sha "ee0b06294e37690ba6b2f36fdd8ea660ce6b94f7"}
+                                      :git/sha "44b55e341ac8ab9626400188836c80ee2b41541e"}
         io.github.slagyr/isaac-agent-spec {:git/url "https://github.com/slagyr/isaac-agent.git"
-                                           :git/sha "ee0b06294e37690ba6b2f36fdd8ea660ce6b94f7"
+                                           :git/sha "44b55e341ac8ab9626400188836c80ee2b41541e"
                                            :deps/root "spec"}
         io.github.slagyr/isaac-server {:git/url "https://github.com/slagyr/isaac-server.git"
-                                       :git/sha "8500116cf41ab1c3e312ec08f7a0e235565de2cf"}
+                                       :git/sha "08b51e965afd65efe02e17e4c6f9dd6d3931ac11"}
         io.github.slagyr/isaac-server-spec {:git/url "https://github.com/slagyr/isaac-server.git"
-                                            :git/sha "8500116cf41ab1c3e312ec08f7a0e235565de2cf"
+                                            :git/sha "08b51e965afd65efe02e17e4c6f9dd6d3931ac11"
                                             :deps/root "spec"}
         io.github.slagyr/isaac-server-test-support {:git/url "https://github.com/slagyr/isaac-server.git"
-                                                    :git/sha "8500116cf41ab1c3e312ec08f7a0e235565de2cf"
+                                                    :git/sha "08b51e965afd65efe02e17e4c6f9dd6d3931ac11"
                                                     :deps/root "spec-support"}}
 
  :tasks
@@ -69,13 +69,11 @@
                 :task (binding [tests/*jvm-features-cmd* ["clojure" "-M:features"]]
                         (apply tests/run-jvm-features! *command-line-args*))}
 
-  ;; Features currently fail on main (missing imessage-steps vars vs feature
-  ;; files) — pre-existing, not introduced by the runner conversion. Keep the
-  ;; jvm-features task for when steps catch up; ci gates on specs only.
-  ci {:doc "Native smoke specs + full JVM specs (features broken on main — see bean)"
+  ci {:doc "Native smoke specs + full JVM specs + feature suite"
       :task (do (run 'config-bypass-lint)
                 (shell "bb" "spec")
-                (shell "bb" "jvm-spec"))}
+                (shell "bb" "jvm-spec")
+                (shell "bb" "jvm-features"))}
 
   smoke {:doc "Mac iMessage smoke"
          :requires ([babashka.fs :as fs]
