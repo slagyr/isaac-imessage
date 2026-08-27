@@ -1,4 +1,3 @@
-@wip
 Feature: iMessage watch snapshot hydration
   imsg watch.subscribe can push a message row before chat_message_join
   and handle.id are populated. That snapshot has a blank chat_guid and

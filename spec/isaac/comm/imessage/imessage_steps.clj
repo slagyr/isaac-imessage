@@ -7,6 +7,7 @@
     [isaac.comm.imessage :as imessage]
     [isaac.comm.imessage.imsg-client :as imsg-client]
     [isaac.comm.registry :as comm-registry]
+    [isaac.logger :as log]
     [isaac.config.api :as config]
     [isaac.config.loader :as loader]
     [isaac.foundation.root-steps :as root-steps]
@@ -21,18 +22,23 @@
 
 (helper! isaac.comm.imessage.imessage-steps)
 
-(defrecord FakeImsgClient [calls]
+(defrecord FakeImsgClient [calls responses]
   imsg-client/Client
   (-request! [_ method params]
     (swap! calls conj {:method method :params params})
-    (doto (promise) (deliver {:ok true})))
+    (doto (promise)
+      (deliver (or (when (= "messages.history" method)
+                     (get @responses [:history (:chat_id params)]))
+                   (when (= "chats.list" method)
+                     (:chats @responses))
+                   {:ok true}))))
   (-notify! [_ method params]
     (swap! calls conj {:method method :params params}))
   (-stop!    [_] nil)
   (-alive?-client [_] true))
 
 (defn- fake-imsg-client []
-  (->FakeImsgClient (atom [])))
+  (->FakeImsgClient (atom []) (atom {})))
 
 (defn- feature-fs []
   (or (g/get :mem-fs) (nexus/get :fs) (fs/real-fs)))
@@ -78,26 +84,55 @@
 (defn- imessage-slice []
   (or (some-> (g/get :imessage-instance) imessage/state :slice) {}))
 
+(defn- parse-optional-long [s]
+  (when (and s (not (str/blank? s)))
+    (parse-long s)))
+
+(defn- row->message [headers row]
+  (let [m (zipmap headers row)]
+    (cond-> {:id         (parse-optional-long (get m "rowid"))
+             :chat_guid  (get m "chat-guid")
+             :sender     (get m "handle")
+             :text       (get m "text")
+             :is_from_me (pos? (or (parse-optional-long (get m "from-me")) 0))
+             :created_at (or (get m "sent-at") "1970-01-01T00:00:00Z")}
+      (contains? m "dest-caller") (assoc :destination_caller_id (get m "dest-caller"))
+      (contains? m "chat-id") (assoc :chat_id (parse-optional-long (get m "chat-id"))))))
+
 (defn- row->notification
   "Translate a scenario row (test-friendly column names) into the
    imsg notification shape that notification->work-item consumes:
    {:method \"message\" :params {:message {...payload...} :subscription N}}."
   [headers row]
-  (let [m (zipmap headers row)]
-    {:method "message"
-     :params {:subscription 1
-              :message      {:id          (some-> (get m "rowid") parse-long)
-                             :chat_guid   (get m "chat-guid")
-                             :sender      (get m "handle")
-                             :text        (get m "text")
-                             :is_from_me  (pos? (or (some-> (get m "from-me") parse-long) 0))
-                             :created_at  (or (get m "sent-at") "1970-01-01T00:00:00Z")}}}))
+  {:method "message"
+   :params {:subscription 1
+            :message      (row->message headers row)}})
 
 (defn- update-imessage-slice! [updater]
   (when-let [instance (g/get :imessage-instance)]
     (reconfigurable/on-config-change! instance
                                     (:slice (imessage/state instance))
                                     (updater (:slice (imessage/state instance))))))
+
+(defn- hydrate-notification [notification]
+  (let [client   (g/get :imessage-fake-client)
+        msg      (get-in notification [:params :message])]
+    (if (or (nil? msg) (:is_from_me msg))
+      notification
+      (let [hydrated (imessage/-hydrate-watch-payload! client msg)]
+        (cond
+          (and (imessage/-incomplete-watch? msg) (not (imessage/-incomplete-watch? hydrated)))
+          (do
+            (log/warn :imessage.intake/hydrated-watch :message-rowid (:id msg))
+            (assoc-in notification [:params :message] hydrated))
+
+          (imessage/-incomplete-watch? hydrated)
+          (do
+            (log/warn :imessage.intake/incomplete-watch :message-rowid (:id msg))
+            nil)
+
+          :else
+          notification)))))
 
 (defn- push-notifications! [headers rows dispatch?]
   (let [comm-impl (comm-registry/comm-for "imessage")
@@ -108,13 +143,14 @@
     (->> rows
          (map #(row->notification headers %))
          (keep (fn [notification]
-                 (when-let [work-item (imessage/notification->work-item slice notification)]
-                   (when dispatch?
-                     ;; Call the dispatch pipeline directly so feature
-                     ;; failures surface (on-imsg-notification! swallows).
-                     (imessage/dispatch-and-enqueue-reply!
-                       state-dir work-item comm-impl max-chars max-chunks))
-                   work-item)))
+                 (when-let [hydrated (hydrate-notification notification)]
+                   (when-let [work-item (imessage/notification->work-item slice hydrated)]
+                     (when dispatch?
+                       ;; Call the dispatch pipeline directly so feature
+                       ;; failures surface (on-imsg-notification! swallows).
+                       (imessage/dispatch-and-enqueue-reply!
+                         state-dir work-item comm-impl max-chars max-chunks))
+                     work-item))))
          vec)))
 
 (defn imessage-source-has-rows
@@ -309,3 +345,31 @@
 (defthen "the imessage runner was invoked with:" isaac.comm.imessage.imessage-steps/runner-was-invoked-with
   "Asserts captured imsg `send` calls match the table (buddy = :to,
    body = :text).")
+
+(defn imsg-history-for-chat [chat-id table]
+  (let [client (g/get :imessage-fake-client)
+        rows   (mapv #(row->message (:headers table) %) (:rows table))]
+    (swap! (:responses client) assoc [:history chat-id] {:messages rows})))
+
+(defn imsg-chat-list-is [table]
+  (let [client (g/get :imessage-fake-client)
+        chats  (mapv (fn [row]
+                       (let [m (zipmap (:headers table) row)]
+                         {:id   (parse-optional-long (get m "chat-id"))
+                          :guid (get m "guid")}))
+                     (:rows table))]
+    (swap! (:responses client) assoc :chats {:chats chats})))
+
+(defn imsg-did-not-receive-method [method]
+  (let [client (g/get :imessage-fake-client)
+        calls  @(:calls client)]
+    (g/should= [] (filterv #(= method (:method %)) calls))))
+
+(defgiven "the imsg history for chat {id:int} is:" isaac.comm.imessage.imessage-steps/imsg-history-for-chat
+  "Stages FakeImsgClient messages.history rows for the given chat_id.")
+
+(defgiven "the imsg chat list is:" isaac.comm.imessage.imessage-steps/imsg-chat-list-is
+  "Stages FakeImsgClient chats.list results.")
+
+(defthen "imsg did not receive method {method:string}" isaac.comm.imessage.imessage-steps/imsg-did-not-receive-method
+  "Asserts FakeImsgClient -request! was never called with this method.")

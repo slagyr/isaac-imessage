@@ -76,6 +76,75 @@
     (some #(= % handle) allow-from) true
     :else false))
 
+(defn- present? [value]
+  (not (str/blank? (str value))))
+
+(defn -chat-identity [msg]
+  (or (when (present? (:chat_guid msg)) (:chat_guid msg))
+      (when (present? (:chat_identifier msg)) (:chat_identifier msg))))
+
+(defn -chat-id [msg]
+  (when-let [chat-id (:chat_id msg)]
+    (when (or (and (number? chat-id) (pos? chat-id))
+              (and (string? chat-id) (present? chat-id)))
+      chat-id)))
+
+(defn -incomplete-watch?
+  "True when an inbound watch payload is missing chat identity, missing
+   sender, or the sender is the local Apple ID (destination_caller_id)."
+  [msg]
+  (and (not (:is_from_me msg))
+       (or (nil? (-chat-identity msg))
+           (not (present? (:sender msg)))
+           (and (present? (:destination_caller_id msg))
+                (= (:sender msg) (:destination_caller_id msg))))))
+
+(def ^:private HYDRATE-HISTORY-LIMIT 50)
+(def ^:private HYDRATE-TIMEOUT-MS 5000)
+
+(defn- deref-imsg [client method params]
+  (let [result (deref (imsg-client/request! client method params)
+                      HYDRATE-TIMEOUT-MS ::timeout)]
+    (when (and (not= ::timeout result) (not (instance? Throwable result)))
+      result)))
+
+(defn- messages-of [result]
+  (or (:messages result) (:result result) (when (sequential? result) result) []))
+
+(defn- chats-of [result]
+  (or (:chats result) (:result result) (when (sequential? result) result) []))
+
+(defn- matching-history-row [rows rowid]
+  (some (fn [row]
+          (when (= rowid (or (:id row) (:rowid row)))
+            row))
+        rows))
+
+(defn- history-for-chat [client chat-id rowid]
+  (when chat-id
+    (matching-history-row
+      (messages-of (deref-imsg client "messages.history" {:chat_id chat-id :limit HYDRATE-HISTORY-LIMIT}))
+      rowid)))
+
+(defn- history-via-chat-list [client rowid]
+  (some (fn [chat]
+          (history-for-chat client (or (:id chat) (:chat_id chat)) rowid))
+        (chats-of (deref-imsg client "chats.list" {}))))
+
+(defn -hydrate-watch-payload!
+  "One-shot re-fetch of an incomplete inbound watch snapshot. Complete
+   payloads are returned unchanged with no RPC."
+  [client msg]
+  (if (or (nil? client) (not (-incomplete-watch? msg)))
+    msg
+    (let [rowid (:id msg)
+          found (or (history-for-chat client (-chat-id msg) rowid)
+                    (when (nil? (-chat-id msg))
+                      (history-via-chat-list client rowid)))]
+      (if found
+        (merge msg found)
+        msg))))
+
 (defn notification->work-item
   "Pure: translates an imsg `message` notification into an Isaac
    work-item, or nil if the message is self-sent, has no chat
@@ -87,7 +156,7 @@
    from openclaw's parseIMessageNotification."
   [slice notification]
   (let [msg       (get-in notification [:params :message])
-        chat-guid (or (:chat_guid msg) (:chat_identifier msg))]
+        chat-guid (-chat-identity msg)]
     (cond
       (not= "message" (:method notification))
       nil
@@ -234,6 +303,25 @@
 
 (declare state)
 
+(defn- hydrate-watch-notification [client notification]
+  (let [msg (get-in notification [:params :message])]
+    (if (or (nil? msg) (:is_from_me msg) (not= "message" (:method notification)))
+      notification
+      (let [hydrated (-hydrate-watch-payload! client msg)]
+        (cond
+          (and (-incomplete-watch? msg) (not (-incomplete-watch? hydrated)))
+          (do
+            (log/warn :imessage.intake/hydrated-watch :message-rowid (:id msg))
+            (assoc-in notification [:params :message] hydrated))
+
+          (-incomplete-watch? hydrated)
+          (do
+            (log/warn :imessage.intake/incomplete-watch :message-rowid (:id msg))
+            nil)
+
+          :else
+          notification)))))
+
 (defn on-imsg-notification!
   "Production-side notification handler. Reads slice + state-dir from
    the comm's state, routes the notification through the dispatch +
@@ -245,17 +333,19 @@
         host       (:host s)
         state-dir  (:state-dir host)
         max-chars  (or (:imessage/message-cap slice) 2000)
-        max-chunks (or (:imessage/max-chunks slice) default-max-chunks)]
-    (when-let [work-item (notification->work-item slice notification)]
-      (try
-        (if state-dir
-          (nexus/-with-nested-nexus {:root state-dir}
-                                    (dispatch-and-enqueue-reply! state-dir work-item comm-impl max-chars max-chunks))
-          (dispatch-and-enqueue-reply! state-dir work-item comm-impl max-chars max-chunks))
-        (catch Exception e
-          (log/error :imessage.notification/dispatch-failed
-                     :error (.getMessage e)
-                     :chat-guid (get-in work-item [:origin :chat-guid])))))))
+        max-chunks (or (:imessage/max-chunks slice) default-max-chunks)
+        hydrated   (hydrate-watch-notification (:imsg-client s) notification)]
+    (when hydrated
+      (when-let [work-item (notification->work-item slice hydrated)]
+        (try
+          (if state-dir
+            (nexus/-with-nested-nexus {:root state-dir}
+                                      (dispatch-and-enqueue-reply! state-dir work-item comm-impl max-chars max-chunks))
+            (dispatch-and-enqueue-reply! state-dir work-item comm-impl max-chars max-chunks))
+          (catch Exception e
+            (log/error :imessage.notification/dispatch-failed
+                       :error (.getMessage e)
+                       :chat-guid (get-in work-item [:origin :chat-guid]))))))))
 
 (defn- subscribe-to-inbound! [client slice]
   (try

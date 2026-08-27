@@ -203,7 +203,102 @@
       (should= nil (sut/notification->work-item @slice {:method "error" :params {}})))
 
     (it "drops messages with no chat identity"
-      (should= nil (sut/notification->work-item @slice (notif {:chat_guid nil :chat_identifier nil}))))))
+      (should= nil (sut/notification->work-item @slice (notif {:chat_guid nil :chat_identifier nil}))))
+
+    (it "drops messages with empty-string chat identity"
+      (should= nil (sut/notification->work-item @slice (notif {:chat_guid "" :chat_identifier ""}))))))
+
+(describe "iMessage watch payload completeness"
+
+  (it "treats empty-string chat identity as missing"
+    (should-be-nil (sut/-chat-identity {:chat_guid "" :chat_identifier ""})))
+
+  (it "prefers a present chat_guid"
+    (should= "any;-;cordelia@marigold.test"
+             (sut/-chat-identity {:chat_guid "any;-;cordelia@marigold.test"})))
+
+  (it "is incomplete when inbound sender is missing"
+    (should (sut/-incomplete-watch?
+              {:is_from_me false :sender "" :chat_guid "T1"})))
+
+  (it "is incomplete when inbound sender equals destination_caller_id"
+    (should (sut/-incomplete-watch?
+              {:is_from_me false
+               :sender "logbook@marigold.test"
+               :destination_caller_id "logbook@marigold.test"
+               :chat_guid "T1"})))
+
+  (it "is complete for a real inbound sender"
+    (should-not (sut/-incomplete-watch?
+                  {:is_from_me false
+                   :sender "cordelia@marigold.test"
+                   :destination_caller_id "logbook@marigold.test"
+                   :chat_guid "any;-;cordelia@marigold.test"}))))
+
+(defn- history-row [overrides]
+  (merge {:id 21
+          :chat_guid "any;-;cordelia@marigold.test"
+          :sender "cordelia@marigold.test"
+          :text "ping"
+          :destination_caller_id "logbook@marigold.test"}
+         overrides))
+
+(describe "iMessage watch hydrate"
+
+  (it "does not call history or list for a complete payload"
+    (let [calls (atom [])]
+      (should= {:chat_guid "T1" :sender "+15551234567"}
+               (select-keys (sut/-hydrate-watch-payload!
+                              (fake-client calls)
+                              {:id 1 :chat_guid "T1" :sender "+15551234567" :is_from_me false})
+                            [:chat_guid :sender]))
+      (should= [] @calls)))
+
+  (it "hydrates from messages.history when chat_id is present"
+    (let [calls (atom [])
+          client (reify isaac.comm.imessage.imsg-client/Client
+                   (-request! [_ method params]
+                     (swap! calls conj {:method method :params params})
+                     (doto (promise) (deliver {:messages [(history-row {})]})))
+                   (-notify! [_ _ _] nil)
+                   (-stop! [_] nil)
+                   (-alive?-client [_] true))
+          hydrated (sut/-hydrate-watch-payload!
+                     client
+                     {:id 21
+                      :chat_guid ""
+                      :sender "logbook@marigold.test"
+                      :destination_caller_id "logbook@marigold.test"
+                      :chat_id 2
+                      :is_from_me false
+                      :text "ping"})]
+      (should= [{:method "messages.history" :params {:chat_id 2 :limit 50}}] @calls)
+      (should= "cordelia@marigold.test" (:sender hydrated))
+      (should= "any;-;cordelia@marigold.test" (:chat_guid hydrated))))
+
+  (it "falls back to chats.list then history when chat_id is missing"
+    (let [calls (atom [])
+          client (reify isaac.comm.imessage.imsg-client/Client
+                   (-request! [_ method params]
+                     (swap! calls conj {:method method :params params})
+                     (doto (promise)
+                       (deliver (case method
+                                  "chats.list" {:chats [{:id 2 :guid "any;-;cordelia@marigold.test"}]}
+                                  "messages.history" {:messages [(history-row {})]}
+                                  {:ok true}))))
+                   (-notify! [_ _ _] nil)
+                   (-stop! [_] nil)
+                   (-alive?-client [_] true))
+          hydrated (sut/-hydrate-watch-payload!
+                     client
+                     {:id 21
+                      :chat_guid ""
+                      :sender "logbook@marigold.test"
+                      :destination_caller_id "logbook@marigold.test"
+                      :is_from_me false
+                      :text "ping"})]
+      (should= ["chats.list" "messages.history"] (mapv :method @calls))
+      (should= "cordelia@marigold.test" (:sender hydrated)))))
 
 (describe "iMessage dispatch-input"
 
