@@ -348,36 +348,26 @@
                        (imsg-error-log-fields e slice))
             nil))))))
 
+(defn- send-record! [this record]
+  (let [state*   (.-state* this)
+        slice    (:slice @state*)
+        client   (:imsg-client @state*)
+        target   (:imessage/target record)
+        service  (or (:imessage/service record) (:imessage/service slice))]
+    (cond
+      (nil? client)
+      {:ok false :transient? true :error "imsg-client not started"}
+
+      (str/blank? target)
+      (do (log/error :imessage.send/no-target :record-id (:id record))
+          {:ok false :transient? false :error "delivery record has no :imessage/target"})
+
+      :else
+      (send! client (cond-> record
+                      (and (nil? (:imessage/service record)) service)
+                      (assoc :imessage/service service))))))
+
 (deftype ImessageComm [host state*]
-  comm/Comm
-  (on-turn-start [_ _ _] nil)
-  (on-text-chunk [_ _ _] nil)
-  (on-tool-call [_ _ _] nil)
-  (on-tool-cancel [_ _ _] nil)
-  (on-tool-result [_ _ _ _] nil)
-  (on-compaction-start [_ _ _] nil)
-  (on-compaction-success [_ _ _] nil)
-  (on-compaction-failure [_ _ _] nil)
-  (on-compaction-disabled [_ _ _] nil)
-  (on-turn-end [_ _ _] nil)
-  (send! [_ record]
-    (let [slice   (:slice @state*)
-          client  (:imsg-client @state*)
-          target  (:imessage/target record)
-          service (or (:imessage/service record) (:imessage/service slice))]
-      (cond
-        (nil? client)
-        {:ok false :transient? true :error "imsg-client not started"}
-
-        (str/blank? target)
-        (do (log/error :imessage.send/no-target :record-id (:id record))
-            {:ok false :transient? false :error "delivery record has no :imessage/target"})
-
-        :else
-        (send! client (cond-> record
-                        (and (nil? (:imessage/service record)) service)
-                        (assoc :imessage/service service))))))
-
   reconfigurable/Reconfigurable
   (on-load [this slice]
     (reset! state* {:host host :slice slice :status :started :imsg-client nil})
@@ -402,6 +392,11 @@
     ;; bail out on its next status check, belt-and-suspenders.
     (reset! state* {:host host :slice nil :status :stopped :prior old-slice})
     (log/info :imsg.client/stopped)))
+
+(extend ImessageComm
+  comm/Comm
+  (merge comm/defaults
+         {:send! send-record!}))
 
 (defn make
   "Builds an ImessageComm from host context. host = {:state-dir <isaac-root>
