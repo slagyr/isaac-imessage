@@ -18,7 +18,7 @@
                :rows    rows})))
 
 (describe "lifecycle feature wiring"
-  (after ((requiring-resolve 'isaac.server.app/stop!)))
+  (after ((requiring-resolve 'isaac.http.app/stop!)))
 
   (it "registers the comm in comm-registry for delivery on server start"
     (steps/imessage-lifecycle-setup)

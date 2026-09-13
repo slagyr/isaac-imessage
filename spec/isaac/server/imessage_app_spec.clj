@@ -1,4 +1,4 @@
-(ns isaac.server.imessage-app-spec
+(ns isaac.http.imessage-app-spec
   (:require
     [clojure.edn :as edn]
     [clojure.java.io :as io]
@@ -8,7 +8,7 @@
     [isaac.fs :as fs]
     [isaac.logger :as log]
     [isaac.nexus :as nexus]
-    [isaac.server.app :as sut]
+    [isaac.http.app :as sut]
     [isaac.spec-helper :as helper]
     [speclj.core :refer :all]))
 
