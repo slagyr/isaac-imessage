@@ -12,8 +12,8 @@
 
 (defn- apply-config! [rows]
   ;; Prefer server-config-applied (current), fall back to configure (legacy pin).
-  (let [apply-fn (or (requiring-resolve 'isaac.server.server-steps/server-config-applied)
-                     (requiring-resolve 'isaac.server.server-steps/configure))]
+  (let [apply-fn (or (requiring-resolve 'isaac.http.server-steps/server-config-applied)
+                     (requiring-resolve 'isaac.http.server-steps/configure))]
     (apply-fn {:headers ["key" "value"]
                :rows    rows})))
 
@@ -23,14 +23,14 @@
   (it "registers the comm in comm-registry for delivery on server start"
     (steps/imessage-lifecycle-setup)
     (apply-config! [["comms.imessage.imessage/service" "iMessage"]])
-    (steps/imessage-isaac-server-started)
+    (steps/imessage-isaac-http-started)
     (should (some? (nexus/get-in [:comms :imessage])))
     (should (some? (comm-registry/comm-for "imessage"))))
 
   (it "hot-reload removes comm when slot deleted"
     (steps/imessage-lifecycle-setup)
     (apply-config! [["comms.imessage.imessage/service" "iMessage"]])
-    (steps/imessage-isaac-server-started)
+    (steps/imessage-isaac-http-started)
     (should (some? (nexus/get-in [:comms :imessage])))
     (cfg-steps/config-updated
       {:headers ["path" "value"]
@@ -42,7 +42,7 @@
     (steps/imessage-lifecycle-setup)
     (apply-config! [["comms.imessage.imessage/service" "iMessage"]
                     ["comms.imessage.imessage/message-cap" "2000"]])
-    (steps/imessage-isaac-server-started)
+    (steps/imessage-isaac-http-started)
     (cfg-steps/config-updated
       {:headers ["path" "value"]
        :rows [["comms.imessage.imessage/message-cap" "500"]]})

@@ -197,9 +197,9 @@
                         (fn [m] (merge {:isaac.comm.imessage coord} m))))
     (persist-imessage-module! coord)))
 
-(defn imessage-isaac-server-started []
+(defn imessage-isaac-http-started []
   ;; Lazy: server-steps only exists on the :features classpath.
-  ((requiring-resolve 'isaac.server.server-steps/server-running)))
+  ((requiring-resolve 'isaac.http.server-steps/server-running)))
 
 (defn comm-registered-for-delivery [name]
   (helper/await-condition #(some? (comm-registry/comm-for name)) 5000)
@@ -273,7 +273,7 @@
   "Adds the imessage module to :server-config :modules so the
    discover! step activates the manifest when the Isaac server starts.")
 
-(defgiven "the imessage Isaac server is started" isaac.comm.imessage.imessage-steps/imessage-isaac-server-started
+(defgiven "the imessage Isaac server is started" isaac.comm.imessage.imessage-steps/imessage-isaac-http-started
   "Boots the Isaac server against the scenario state dir with the
    declared imessage module. Distinct from the generic server step so
    features don't collide with isaac.agent.module-steps.")

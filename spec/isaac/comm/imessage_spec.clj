@@ -113,7 +113,7 @@
 
   (it "declares namespaced :send-schema on the manifest"
     (let [manifest (edn/read-string (slurp (io/resource "isaac-manifest.edn")))
-          schema   (get-in manifest [:isaac.server/comm :imessage :send-schema])]
+          schema   (get-in manifest [:isaac.http/comm :imessage :send-schema])]
       (should= #{:imessage/target :imessage/service} (set (keys schema)))))
 
   (it "enqueues reply chunks with :imessage/target"

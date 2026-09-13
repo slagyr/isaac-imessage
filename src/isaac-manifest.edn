@@ -2,7 +2,7 @@
  :version "0.1.6"
  :factory isaac.module.protocol/module
 
- :isaac.server/comm
+ :isaac.http/comm
  {:imessage {:namespace    isaac.comm.imessage
              :extra-schema {:imessage/service     {:type        :string
                                                    :description "Messages service name passed through to imsg (\"iMessage\" or \"SMS\"). Defaults to iMessage."}
