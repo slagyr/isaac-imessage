@@ -50,9 +50,10 @@
   ;; Grover is a config-driven test provider now; the removed
   ;; install-test-fixture! only reset the response queue.
   (grover/reset-queue!)
-  ;; Don't blow away an already-initialized state dir (e.g. default Grover
-  ;; setup ran first to install LLM defaults). Otherwise initialize fresh.
-  (when-not (g/get :root)
+  ;; HTTP's feature hook may seed a real :root before the Background runs.
+  ;; Preserve only a root that already has an in-memory feature filesystem
+  ;; (e.g. default Grover setup); otherwise replace the seed with our fixture.
+  (when-not (g/get :mem-fs)
     (root-steps/in-memory-state "target/test-state"))
   (ensure-session-store!)
   (let [client   (fake-imsg-client)

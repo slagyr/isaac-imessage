@@ -4,11 +4,15 @@
     [clojure.java.io :as io]
     [isaac.comm.imessage :as imessage]
     [isaac.comm.imessage.imsg-client :as imsg-client]
+    [isaac.comm.registry :as comm-registry]
+    [isaac.component.registry :as component-registry]
+    [isaac.component.runtime :as component-runtime]
     [isaac.config.change-source :as change-source]
     [isaac.fs :as fs]
-    [isaac.logger :as log]
-    [isaac.nexus :as nexus]
     [isaac.http.app :as sut]
+    [isaac.logger :as log]
+    [isaac.module.loader :as module-loader]
+    [isaac.nexus :as nexus]
     [isaac.spec-helper :as helper]
     [speclj.core :refer :all]))
 
@@ -20,7 +24,11 @@
   {:isaac.comm.imessage {:local/root (System/getProperty "user.dir")}})
 
 (defn- cfg-with-imessage [cfg]
-  (assoc cfg :module-index (imessage-module-index)))
+  (assoc cfg :module-index (merge (module-loader/builtin-index) (imessage-module-index))))
+
+(defn- start-server! [opts]
+  (let [config (:config opts)]
+    (sut/start! (assoc opts :module-index (:module-index config)))))
 
 (defn- config-edn [body]
   (pr-str (merge {:modules (imessage-modules)} body)))
@@ -36,13 +44,24 @@
 
   (helper/with-captured-logs)
 
+  (around [example]
+    (sut/stop!)
+    (module-loader/clear-activations!)
+    (component-runtime/reset-state!)
+    (binding [comm-registry/*registry*       (atom (comm-registry/fresh-registry))
+              component-registry/*registry* (atom (component-registry/fresh-registry))]
+      (nexus/-with-nested-nexus {:fs (fs/mem-fs)} (example)))
+    (sut/stop!)
+    (module-loader/clear-activations!)
+    (component-runtime/reset-state!))
+
   (after (sut/stop!))
 
   (it "activates imessage comm on startup when comms.imessage config is present"
     (with-redefs [imsg-client/start! (fn [_] (throw (ex-info "should not spawn without db-path" {})))]
-      (sut/start! {:port               0
+      (start-server! {:port               0
                    :root               "/tmp/isaac-imessage"
-                   :cfg                (cfg-with-imessage {:comms {:imessage {:imessage/service "iMessage"}}})
+                   :config                (cfg-with-imessage {:comms {:imessage {:imessage/service "iMessage"}}})
                    :start-http-server? false})
       (helper/await-condition #(some? (live-imessage)) 6000)
       (should (imessage/imessage? (live-imessage)))
@@ -54,9 +73,9 @@
   (it "does not spawn imsg client on startup when db-path is absent"
     (let [started (atom false)]
       (with-redefs [imsg-client/start! (fn [_] (reset! started true) ::client)]
-        (sut/start! {:port               0
+        (start-server! {:port               0
                      :root               "/tmp/isaac-imessage"
-                     :cfg                (cfg-with-imessage {:comms {:imessage {:imessage/service "iMessage"}}})
+                     :config                (cfg-with-imessage {:comms {:imessage {:imessage/service "iMessage"}}})
                      :start-http-server? false})
         (helper/await-condition #(some? (live-imessage)) 6000)
         (sut/stop!))
@@ -68,9 +87,9 @@
       (.createNewFile (java.io.File. db-path))
       (with-redefs [imsg-client/start!  (fn [opts] (reset! started opts) ::client)
                     imsg-client/request! (stub-request! {:subscription 1})]
-        (sut/start! {:port               0
+        (start-server! {:port               0
                      :root               "/tmp/isaac-imessage-db"
-                     :cfg                (cfg-with-imessage
+                     :config                (cfg-with-imessage
                                          {:comms {:imessage {:imessage/service "iMessage"
                                                              :imessage/db-path db-path}}})
                      :start-http-server? false})
@@ -83,9 +102,9 @@
           command ["ssh" "-T" "zane@mac" "/usr/local/bin/imsg"]]
       (with-redefs [imsg-client/start!  (fn [opts] (reset! started opts) ::client)
                     imsg-client/request! (stub-request! {:subscription 1})]
-        (sut/start! {:port               0
+        (start-server! {:port               0
                      :root               "/tmp/isaac-imessage-wrap"
-                     :cfg                (cfg-with-imessage
+                     :config                (cfg-with-imessage
                                          {:comms {:imessage {:imessage/service  "iMessage"
                                                              :imessage/db-path  "/Users/zane/Library/Messages/chat.db"
                                                              :imessage/command command}}})
@@ -103,7 +122,7 @@
                  (config-edn {:comms {:imessage {:imessage/service     "iMessage"
                                                  :imessage/message-cap 2000}}}))
         (with-redefs [imsg-client/start! (fn [_] nil)]
-          (sut/start! {:cfg                  (cfg-with-imessage {:comms {:imessage {:imessage/service     "iMessage"
+          (start-server! {:config                  (cfg-with-imessage {:comms {:imessage {:imessage/service     "iMessage"
                                                                                    :imessage/message-cap 2000}}})
                        :config-change-source source
                        :fs                   mem
@@ -136,7 +155,7 @@
         (with-redefs [imsg-client/start!  (fn [_] ::client)
                       imsg-client/stop!   (fn [client] (reset! stopped client))
                       imsg-client/request! (stub-request! {:subscription 1})]
-          (sut/start! {:cfg                  (cfg-with-imessage {:comms {:imessage {:imessage/service "iMessage"
+          (start-server! {:config                  (cfg-with-imessage {:comms {:imessage {:imessage/service "iMessage"
                                                                                    :imessage/db-path db-path}}})
                        :config-change-source source
                        :fs                   mem
