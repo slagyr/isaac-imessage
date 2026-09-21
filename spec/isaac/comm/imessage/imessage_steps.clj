@@ -171,7 +171,7 @@
   (let [coord {:local/root (System/getProperty "user.dir")}
         path  (str (g/get :root) "/config/isaac.edn")
         fs*   (or (g/get :mem-fs) (nexus/get :fs) (fs/real-fs))
-        cfg   {:server     {:hot-reload true}
+        cfg   {:hot-reload true
                :modules    {:isaac.comm.imessage coord}
                :defaults   {:crew "main" :model "grover"}
                :models     {:grover {:model "echo" :provider :grover :context-window 32768}}

@@ -158,7 +158,8 @@
                                   comm-impl (assoc :comm comm-impl))))))
 
 (defn result->reply-text [result]
-  (or (get-in result [:response :message :content])
+  (or (get-in result [:response :content])
+      (get-in result [:response :message :content])
       (get-in result [:message :content])
       (:content result)
       (:message result)
