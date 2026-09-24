@@ -21,18 +21,19 @@
 
 (helper! isaac.comm.imessage.imessage-steps)
 
-(defrecord FakeImsgClient [calls]
+(defrecord FakeImsgClient [calls send-response]
   imsg-client/Client
   (-request! [_ method params]
     (swap! calls conj {:method method :params params})
-    (doto (promise) (deliver {:ok true})))
+    (doto (promise)
+      (deliver (or (when (= "send" method) @send-response) {:ok true}))))
   (-notify! [_ method params]
     (swap! calls conj {:method method :params params}))
   (-stop!    [_] nil)
   (-alive?-client [_] true))
 
 (defn- fake-imsg-client []
-  (->FakeImsgClient (atom [])))
+  (->FakeImsgClient (atom []) (atom nil)))
 
 (defn- feature-fs []
   (or (g/get :mem-fs) (nexus/get :fs) (fs/real-fs)))
@@ -63,7 +64,10 @@
                   ;; delivery queue and other per-comm files live.
                   :state-dir (g/get :root)}
         instance (imessage/make host)]
-    (reconfigurable/on-load instance {:imessage/service "iMessage"})
+    ;; No :imessage/service — the shipping default. An explicit service is
+    ;; an operator decision, and configuring "iMessage" is the broken path
+    ;; through imsg's AppleScript transport (isaac-2zs0).
+    (reconfigurable/on-load instance {})
     (comm-registry/register-instance! "imessage" instance)
     (g/assoc! :imessage-instance instance)
     (g/assoc! :imessage-fake-client client)
@@ -213,6 +217,33 @@
 (defn imessage-message-cap-is [n]
   (update-imessage-slice! #(assoc % :imessage/message-cap n)))
 
+(defn imessage-service-is [value]
+  (update-imessage-slice! #(assoc % :imessage/service value)))
+
+(defn- blank->nil [s]
+  (when-not (str/blank? s) s))
+
+(defn imsg-send-fails-with
+  "Arms the FakeImsgClient so the next `send` resolves to an imsg
+   JSON-RPC error. Columns: code, message, and the structured :data
+   fields imsg answers with — disposition, retry_safe, detail."
+  [table]
+  (let [row   (zipmap (:headers table) (first (:rows table)))
+        data  (cond-> {}
+                (blank->nil (get row "disposition")) (assoc :disposition (get row "disposition"))
+                (blank->nil (get row "retry_safe"))  (assoc :retry_safe (= "true" (get row "retry_safe")))
+                (blank->nil (get row "detail"))      (assoc :detail (get row "detail")))
+        rpc   (cond-> {:message (or (blank->nil (get row "message")) "JSON-RPC error")}
+                (blank->nil (get row "code")) (assoc :code (parse-long (get row "code")))
+                (seq data)                    (assoc :data data))]
+    (reset! (:send-response (g/get :imessage-fake-client))
+            (ex-info (:message rpc) {:type :imsg/error :rpc-error rpc}))))
+
+(defn imessage-runner-send-count [n]
+  (let [calls (->> @(:calls (g/get :imessage-fake-client))
+                   (filter #(= "send" (:method %))))]
+    (g/should= n (count calls))))
+
 (defn imessage-allow-from-is [value]
   (let [parts (->> (str/split (or value "") #",")
                    (map str/trim)
@@ -234,7 +265,10 @@
                          (filter #(= "send" (:method %)))
                          (mapv (fn [call]
                                  (let [params (:params call)]
-                                   {:service (or (:service params) "imessage")
+                                   ;; :service reported raw — a blank cell in
+                                   ;; the table asserts imsg was left to pick
+                                   ;; the transport itself (isaac-2zs0).
+                                   {:service (:service params)
                                     :buddy   (:to params)
                                     :body    (:text params)}))))
         result      (match/match-entries table calls)]
@@ -292,6 +326,19 @@
 
 (defgiven "comms.imessage.message-cap is {n:int}" isaac.comm.imessage.imessage-steps/imessage-message-cap-is
   "Updates the registered comm's slice with :message-cap.")
+
+(defgiven "comms.imessage.service is {value:string}" isaac.comm.imessage.imessage-steps/imessage-service-is
+  "Updates the registered comm's slice with :imessage/service — the
+   deliberate operator choice. Omit the step for the default (no service;
+   imsg picks the transport).")
+
+(defgiven "the imsg send fails with:" isaac.comm.imessage.imessage-steps/imsg-send-fails-with
+  "Arms the fake imsg client so `send` resolves to a JSON-RPC error.
+   Columns: code, message, disposition, retry_safe, detail — the last
+   three become the structured :data map imsg answers with.")
+
+(defthen "the imessage runner send count is {n:int}" isaac.comm.imessage.imessage-steps/imessage-runner-send-count
+  "Asserts how many `send` calls reached imsg — the retry count.")
 
 (defgiven "comms.imessage.allow-from is {value:string}" isaac.comm.imessage.imessage-steps/imessage-allow-from-is
   "Updates the registered imessage comm's slice with :allow-from

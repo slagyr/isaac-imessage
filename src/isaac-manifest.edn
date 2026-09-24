@@ -5,7 +5,7 @@
  :isaac.agent/comm
  {:imessage {:namespace    isaac.comm.imessage
              :extra-schema {:imessage/service     {:type        :string
-                                                   :description "Messages service name passed through to imsg (\"iMessage\" or \"SMS\"). Defaults to iMessage."}
+                                                   :description "Transport imsg should use: \"auto\" (imsg picks — the working value, and what Isaac does when this key is omitted), \"sms\", or \"imessage\". Omit it unless you mean to pin the transport. Do not set \"imessage\": through imsg's AppleScript transport an explicit imessage send reports -32001 \"Delivery outcome unknown\" and never arrives (measured 2026-09-24 against a live iMessage chat); \"auto\" delivers on the first attempt."}
                             :imessage/db-path     {:type        :string
                                                    :description "Absolute path to Messages chat.db (typically /Users/<you>/Library/Messages/chat.db). Required to spawn the imsg subprocess; omitting it leaves the comm off so tests don't accidentally hit a real chat.db."}
                             :imessage/bin         {:type        :string
@@ -23,5 +23,5 @@
              :send-schema  {:imessage/target  {:type        :string
                                                 :description "Recipient handle (phone number or email) for the outbound message."}
                             :imessage/service {:type        :string
-                                               :validations [[:one-of? "iMessage" "SMS"]]
-                                               :description "Messages service name passed through to imsg. Defaults to the comm slice's :imessage/service when omitted on the delivery record."}}}}}
+                                               :validations [[:one-of? "auto" "sms" "imessage"]]
+                                               :description "Transport for this one message: \"auto\" (imsg picks), \"sms\", or \"imessage\" (known to fail through imsg's AppleScript transport — prefer auto). Falls back to the comm slice's :imessage/service; with neither set, no service is sent and imsg chooses."}}}}}

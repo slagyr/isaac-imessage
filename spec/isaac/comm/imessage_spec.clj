@@ -37,6 +37,27 @@
                           :rpc-error {:code -32601 :message "Method not found"}})]
       (should= "Method not found" (sut/-imsg-error-message err))))
 
+  (it "reads :detail out of a structured rpc-error :data map"
+    (let [err (ex-info "Delivery outcome unknown"
+                         {:type      :imsg/error
+                          :rpc-error {:code    -32001
+                                      :message "Delivery outcome unknown"
+                                      :data    {:operation    "send"
+                                                :disposition  "may_have_completed"
+                                                :transport    "applescript"
+                                                :retry_safe   false
+                                                :detail       "Messages automation returned success, but no matching outgoing text row was observed within 8 seconds."}}})]
+      (should= "Messages automation returned success, but no matching outgoing text row was observed within 8 seconds."
+               (sut/-imsg-error-message err))))
+
+  (it "falls back to the rpc-error :message when structured :data carries no :detail"
+    (let [err (ex-info "Delivery outcome unknown"
+                         {:type      :imsg/error
+                          :rpc-error {:code    -32001
+                                      :message "Delivery outcome unknown"
+                                      :data    {:retry_safe false}}})]
+      (should= "Delivery outcome unknown" (sut/-imsg-error-message err))))
+
   (it "logs subscribe failure with rpc detail and slice context"
     (let [calls  (atom [])
           client (reify isaac.comm.imessage.imsg-client/Client
@@ -116,6 +137,18 @@
           schema   (get-in manifest [:isaac.agent/comm :imessage :send-schema])]
       (should= #{:imessage/target :imessage/service} (set (keys schema)))))
 
+  (it "offers auto/sms/imessage as the send-record :service values"
+    (let [manifest (edn/read-string (slurp (io/resource "isaac-manifest.edn")))
+          field    (get-in manifest [:isaac.agent/comm :imessage :send-schema :imessage/service])]
+      (should= [[:one-of? "auto" "sms" "imessage"]] (:validations field))))
+
+  (it "documents auto — not iMessage — as the working service default"
+    (let [manifest    (edn/read-string (slurp (io/resource "isaac-manifest.edn")))
+          description (get-in manifest [:isaac.agent/comm :imessage :extra-schema
+                                        :imessage/service :description])]
+      (should (str/includes? description "auto"))
+      (should-not (str/includes? description "Defaults to iMessage"))))
+
   (it "enqueues reply chunks with :imessage/target"
     (let [captured (atom [])]
       (with-redefs [sut/dispatch-work-item! (fn [_ _ _]
@@ -132,6 +165,45 @@
                (select-keys (first @captured) [:comm :imessage/target :content])))))
 
 (describe "iMessage outbound translation"
+
+  (it "honours :retry_safe false in the error :data as a permanent failure"
+    (let [err (ex-info "Delivery outcome unknown"
+                         {:type      :imsg/error
+                          :rpc-error {:code    -32001
+                                      :message "Delivery outcome unknown"
+                                      :data    {:operation   "send"
+                                                :disposition "may_have_completed"
+                                                :transport   "applescript"
+                                                :retry_safe  false
+                                                :detail      "Messages automation returned success, but no matching outgoing text row was observed within 8 seconds."}}})]
+      (should= {:ok false :transient? false :error (sut/-imsg-error-message err)}
+               (sut/-classify-imsg-error err))))
+
+  (it "never retries a \"may_have_completed\" disposition"
+    (let [err (ex-info "Delivery outcome unknown"
+                         {:type      :imsg/error
+                          :rpc-error {:code -32001
+                                      :message "Delivery outcome unknown"
+                                      :data {:disposition "may_have_completed"}}})]
+      (should= false (:transient? (sut/-classify-imsg-error err)))))
+
+  (it "retries when the error :data says the send is retry-safe"
+    (let [err (ex-info "Messages is not running"
+                         {:type      :imsg/error
+                          :rpc-error {:code -32001
+                                      :message "Messages is not running"
+                                      :data {:disposition "did_not_send" :retry_safe true}}})]
+      (should= true (:transient? (sut/-classify-imsg-error err)))))
+
+  (it "falls back to the message regex when the error carries no structured :data"
+    (let [permanent (ex-info "Internal error"
+                             {:type      :imsg/error
+                              :rpc-error {:code -32603 :message "invalid handle: +1555"}})
+          transient* (ex-info "Internal error"
+                              {:type      :imsg/error
+                               :rpc-error {:code -32603 :message "connection reset"}})]
+      (should= false (:transient? (sut/-classify-imsg-error permanent)))
+      (should= true  (:transient? (sut/-classify-imsg-error transient*)))))
 
   (it "classifies permission errors surfaced in rpc-error :data as permanent"
     (let [err (ex-info "Internal error"

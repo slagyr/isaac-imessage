@@ -35,6 +35,18 @@
                  :params {:to "+15551234567" :text "hello" :service "e:me"}}]
                (filterv #(= "send" (:method %)) @calls))))
 
+  (it "sends no :service when neither the record nor the slice configures one"
+    ;; Absent config means "let imsg choose" (its `auto` transport), not
+    ;; an explicit `imessage` — the explicit one is the broken path.
+    (let [[client calls] (fake-client+calls)
+          instance       (sut/make {:name "imessage-slot" :imsg-client client})]
+      (reconfigurable/on-load instance {})
+      (should= {:ok true} (comm/send! instance {:content         "hello"
+                                                :imessage/target "+15551234567"}))
+      (should= [{:method "send"
+                 :params {:to "+15551234567" :text "hello"}}]
+               (filterv #(= "send" (:method %)) @calls))))
+
   (it "prefers per-record service over slice service"
     (let [[client calls] (fake-client+calls)
           instance       (sut/make {:name "imessage-slot" :imsg-client client})]

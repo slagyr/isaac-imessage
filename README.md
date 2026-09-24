@@ -50,8 +50,7 @@ sends and the chat.db is owned by the GUI user.
 Add `comms.imessage` to your `~/.isaac/config/isaac.edn`:
 
 ```clojure
-{:comms {:imessage {:imessage/service     "iMessage"
-                    :imessage/db-path     "/Users/zane/Library/Messages/chat.db"
+{:comms {:imessage {:imessage/db-path     "/Users/zane/Library/Messages/chat.db"
                     :imessage/bin         "/usr/local/bin/imsg"
                     :imessage/allow-from  ["+15551234567" "friend@icloud.com"]}}}
 ```
@@ -60,9 +59,14 @@ All slice keys live in the `:imessage/` keyword namespace so the comm
 config doesn't collide with anything Isaac (or another module)
 might inject into the same map.
 
-- `:imessage/service` — Messages service name. Almost always
-  `"iMessage"`; use `"SMS"` only if you specifically want SMS over
-  a paired phone.
+- `:imessage/service` — transport imsg should use: `"auto"`,
+  `"sms"`, or `"imessage"`. **Omit it** unless you mean to pin the
+  transport; Isaac then passes no service and imsg picks, which is
+  the path that works. Do not set `"imessage"`: through imsg's
+  AppleScript transport an explicit imessage send reports
+  `-32001 "Delivery outcome unknown"` and never arrives (measured
+  2026-09-24 against a live iMessage chat), while the same send with
+  no service — or `"auto"` — delivers on the first attempt.
 - `:imessage/db-path` — absolute path to the Messages chat database.
   Required to spawn the imsg subprocess; omitting it leaves the
   comm dormant (handy for non-Mac dev, and a guard so tests can't
@@ -99,7 +103,6 @@ logged-in Mac and tunnel stdio over SSH:
 ```clojure
 {:comms {:imessage {:imessage/command    ["ssh" "-T" "zane@zanebot.example.com" "/usr/local/bin/imsg"]
                     :imessage/db-path    "/Users/zane/Library/Messages/chat.db"
-                    :imessage/service    "iMessage"
                     :imessage/allow-from ["friend@icloud.com"]}}}
 ```
 

@@ -24,14 +24,26 @@
           (:imessage/service record)
           (assoc :service (str/lower-case (:imessage/service record)))))
 
+(defn- rpc-error-data
+  "The structured :data map imsg attaches to an error, when it sent one.
+   Older/simpler errors put a bare string there instead."
+  [error]
+  (let [data (some-> (ex-data error) :rpc-error :data)]
+    (when (map? data) data)))
+
 (defn -imsg-error-message
   "Best-effort detail from an imsg JSON-RPC error. imsg uses a generic
-   \"Internal error\" :message and puts the actionable text in :data."
+   \"Internal error\" :message and puts the actionable text in :data —
+   either as a bare string, or as a structured map whose :detail carries
+   it. Always a string: the classifier regexes over this."
   [error]
-  (or (some-> (ex-data error) :rpc-error :data)
-      (some-> (ex-data error) :rpc-error :message)
-      (.getMessage ^Throwable error)
-      ""))
+  (let [rpc  (some-> (ex-data error) :rpc-error)
+        data (:data rpc)]
+    (or (when (string? data) data)
+        (some-> (rpc-error-data error) :detail str)
+        (:message rpc)
+        (.getMessage ^Throwable error)
+        "")))
 
 (defn- imsg-error-log-fields
   "Structured log fields for an imsg failure, optionally including slice
@@ -45,8 +57,23 @@
     (:imessage/bin slice) (assoc :imessage/bin (:imessage/bin slice))))
 
 (defn- classify-imsg-error [error]
-  (let [msg (-imsg-error-message error)]
+  (let [msg  (-imsg-error-message error)
+        data (rpc-error-data error)]
     (cond
+      ;; imsg answers the retry question outright — honour it ahead of the
+      ;; message regex. `retry_safe false` means "this may already have
+      ;; gone out"; sending again puts the same message in front of a
+      ;; human twice.
+      (false? (:retry_safe data))
+      {:ok false :transient? false :error msg}
+
+      (= "may_have_completed" (:disposition data))
+      {:ok false :transient? false :error msg}
+
+      (true? (:retry_safe data))
+      {:ok false :transient? true :error msg}
+
+      ;; Fallback for errors that carry no structured :data.
       (re-find #"(?i)not authorized|permission|unknown buddy|invalid handle|no such" msg)
       {:ok false :transient? false :error msg}
 
