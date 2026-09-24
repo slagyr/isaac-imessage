@@ -7,6 +7,7 @@
     [isaac.comm.delivery.queue :as queue]
     [isaac.comm.imessage :as sut]
     [isaac.comm.imessage.imsg-client :as imsg-client]
+    [isaac.comm.protocol :as comm]
     [isaac.logger :as log]
     [isaac.reconfigurable :as reconfigurable]
     [speclj.core :refer :all]))
@@ -232,50 +233,107 @@
       (should= {:to "+15551234567" :text "hi"}
                (:params (first @calls))))))
 
+;; Shared fixtures for the inbound filter. Top-level, not a `let` inside
+;; `describe`: a let body yields only its last form, so every `it` but the
+;; last silently vanishes from the suite.
+(def ^:private inbound-slice {:imessage/allow-from ["+15551234567" "friend@icloud.com"]})
+
+(defn- notif [overrides]
+  {:method "message"
+   :params {:subscription 1
+            :message      (merge {:id         1
+                                  :chat_guid  "T1"
+                                  :sender     "+15551234567"
+                                  :text       "hi"
+                                  :is_from_me false
+                                  :created_at "2026-05-20T00:00:00Z"}
+                                 overrides)}})
+
 (describe "iMessage inbound filter (notification->work-item)"
 
-  (let [allow ["+15551234567" "friend@icloud.com"]
-        slice (delay {:imessage/allow-from allow})
-        notif (fn [overrides]
-                {:method "message"
-                 :params {:subscription 1
-                          :message (merge {:id 1
-                                           :chat_guid "T1"
-                                           :sender "+15551234567"
-                                           :text "hi"
-                                           :is_from_me false
-                                           :created_at "2026-05-20T00:00:00Z"}
-                                          overrides)}})]
+  (it "produces a work-item for an allowed inbound message"
+    (let [item (sut/notification->work-item inbound-slice (notif {}))]
+      (should= "imessage:T1" (:session-key item))
+      (should= "hi" (:input item))
+      (should= {:kind          :imessage
+                :chat-guid     "T1"
+                :handle        "+15551234567"
+                :message-rowid 1
+                :sent-at       "2026-05-20T00:00:00Z"}
+               (:origin item))))
 
-    (it "produces a work-item for an allowed inbound message"
-      (let [item (sut/notification->work-item @slice (notif {}))]
-        (should= "imessage:T1" (:session-key item))
-        (should= "hi" (:input item))
-        (should= {:kind          :imessage
-                  :chat-guid     "T1"
-                  :handle        "+15551234567"
-                  :message-rowid 1
-                  :sent-at       "2026-05-20T00:00:00Z"}
-                 (:origin item))))
+  (it "drops self-sent messages"
+    (should= nil (sut/notification->work-item inbound-slice (notif {:is_from_me true}))))
 
-    (it "drops self-sent messages"
-      (should= nil (sut/notification->work-item @slice (notif {:is_from_me true}))))
+  (it "drops senders not in allow-from"
+    (should= nil (sut/notification->work-item inbound-slice (notif {:sender "+15559999999"}))))
 
-    (it "drops senders not in allow-from"
-      (should= nil (sut/notification->work-item @slice (notif {:sender "+15559999999"}))))
+  (it "drops everything when allow-from is empty (fail-closed)"
+    (should= nil (sut/notification->work-item {:imessage/allow-from []} (notif {}))))
 
-    (it "drops everything when allow-from is empty (fail-closed)"
-      (should= nil (sut/notification->work-item {:imessage/allow-from []} (notif {}))))
+  (it "passes everything when allow-from is missing (no filter)"
+    (let [item (sut/notification->work-item {} (notif {:sender "+15559999999"}))]
+      (should= "+15559999999" (get-in item [:origin :handle]))))
 
-    (it "passes everything when allow-from is missing (no filter)"
-      (let [item (sut/notification->work-item {} (notif {:sender "+15559999999"}))]
-        (should= "+15559999999" (get-in item [:origin :handle]))))
+  (it "ignores notifications with a method other than \"message\""
+    (should= nil (sut/notification->work-item inbound-slice {:method "error" :params {}})))
 
-    (it "ignores notifications with a method other than \"message\""
-      (should= nil (sut/notification->work-item @slice {:method "error" :params {}})))
+  (it "drops messages with no chat identity"
+    (should= nil (sut/notification->work-item inbound-slice (notif {:chat_guid nil :chat_identifier nil}))))
 
-    (it "drops messages with no chat identity"
-      (should= nil (sut/notification->work-item @slice (notif {:chat_guid nil :chat_identifier nil}))))))
+  (it "drops every inbound message on a send-only comm"
+    (should= nil (sut/notification->work-item
+                   (assoc inbound-slice :imessage/inbound? false)
+                   (notif {}))))
+
+  (it "keeps producing work-items when inbound? is explicitly true"
+    (should= "imessage:T1"
+             (:session-key (sut/notification->work-item
+                             (assoc inbound-slice :imessage/inbound? true)
+                             (notif {}))))))
+
+(defn- subscribed? [calls]
+  (boolean (some #(= "watch.subscribe" (:method %)) @calls)))
+
+(describe "send-only iMessage comm (isaac-k00m)"
+
+  (it "does not subscribe to the watch when inbound? is false"
+    (let [calls  (atom [])
+          client (fake-client calls)]
+      (log/capture-logs
+        (reconfigurable/on-load (sut/make {:name "imessage" :imsg-client client})
+                                {:imessage/inbound? false}))
+      (should= false (subscribed? calls))
+      (should (some #(= :imsg.watch/send-only (:event %)) @log/captured-logs))))
+
+  (it "subscribes to the watch when inbound? is absent"
+    (let [calls  (atom [])
+          client (fake-client calls)]
+      (reconfigurable/on-load (sut/make {:name "imessage" :imsg-client client}) {})
+      (should= true (subscribed? calls))))
+
+  (it "subscribes to the watch when inbound? is true"
+    (let [calls  (atom [])
+          client (fake-client calls)]
+      (reconfigurable/on-load (sut/make {:name "imessage" :imsg-client client})
+                              {:imessage/inbound? true})
+      (should= true (subscribed? calls))))
+
+  (it "still sends outbound records when inbound? is false"
+    (let [calls  (atom [])
+          client (fake-client calls)
+          comm   (sut/make {:name "imessage" :imsg-client client})]
+      (reconfigurable/on-load comm {:imessage/inbound? false})
+      (should= {:ok true} (comm/send! comm {:imessage/target "friend@icloud.com"
+                                            :content         "Still sending."}))
+      (should= [{:to "friend@icloud.com" :text "Still sending."}]
+               (->> @calls (filter #(= "send" (:method %))) (mapv :params)))))
+
+  (it "declares :imessage/inbound? on the comm's config schema"
+    (let [manifest (edn/read-string (slurp (io/resource "isaac-manifest.edn")))
+          schema   (get-in manifest [:isaac.agent/comm :imessage :extra-schema :imessage/inbound?])]
+      (should= :boolean (:type schema))
+      (should (string? (:description schema))))))
 
 (describe "iMessage dispatch-input"
 

@@ -103,6 +103,13 @@
     (some #(= % handle) allow-from) true
     :else false))
 
+(defn- inbound?
+  "Send-only comms declare :imessage/inbound? false and never watch the
+   chat.db they point at. Absent (or true) keeps the bidirectional
+   behaviour every other comm has."
+  [slice]
+  (not (false? (:imessage/inbound? slice))))
+
 (defn notification->work-item
   "Pure: translates an imsg `message` notification into an Isaac
    work-item, or nil if the message is self-sent, has no chat
@@ -127,6 +134,12 @@
 
       (not chat-guid)
       (do (log/debug :imessage.notification/no-chat-guid :params (:params notification)) nil)
+
+      (not (inbound? slice))
+      (do (log/debug :imessage.intake/send-only
+                     :chat-guid chat-guid
+                     :message-rowid (:id msg))
+          nil)
 
       (not (allowed? (:imessage/allow-from slice) (:sender msg)))
       (do (log/debug :imessage.intake/drop-sender
@@ -302,6 +315,15 @@
     (catch Exception e
       (log/error :imsg.watch/subscribe-failed (imsg-error-log-fields e slice)))))
 
+(defn- subscribe-unless-send-only!
+  "Opens the inbound watch, unless the operator declared the comm
+   send-only. A send-only comm costs nothing at runtime: no
+   subscription, no notifications to filter."
+  [client slice]
+  (if (inbound? slice)
+    (subscribe-to-inbound! client slice)
+    (log/info :imsg.watch/send-only :imessage/db-path (:imessage/db-path slice))))
+
 (declare ^:private spawn-client!)
 
 (def ^:private reconnect-retry-opts
@@ -321,7 +343,7 @@
         (do
           (swap! state* assoc :imsg-client client :status :started)
           (log/info :imsg.client/reconnected)
-          (subscribe-to-inbound! client (:slice s)))
+          (subscribe-unless-send-only! client (:slice s)))
         ;; Throw so the scheduler's :retry kicks in. A normal return
         ;; would look like success and drop the task.
         (throw (ex-info "imsg reconnect failed" {}))))))
@@ -403,7 +425,7 @@
                      (spawn-client! this host slice))]
       (swap! state* assoc :imsg-client client)
       (when client
-        (subscribe-to-inbound! client slice))))
+        (subscribe-unless-send-only! client slice))))
   (on-config-change! [_ old-slice new-slice]
     (swap! state* assoc :slice new-slice :status :changed :prior old-slice))
   (on-unload [_ old-slice]

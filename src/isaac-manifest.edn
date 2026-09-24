@@ -7,7 +7,7 @@
              :extra-schema {:imessage/service     {:type        :string
                                                    :description "Transport imsg should use: \"auto\" (imsg picks — the working value, and what Isaac does when this key is omitted), \"sms\", or \"imessage\". Omit it unless you mean to pin the transport. Do not set \"imessage\": through imsg's AppleScript transport an explicit imessage send reports -32001 \"Delivery outcome unknown\" and never arrives (measured 2026-09-24 against a live iMessage chat); \"auto\" delivers on the first attempt."}
                             :imessage/db-path     {:type        :string
-                                                   :description "Absolute path to Messages chat.db (typically /Users/<you>/Library/Messages/chat.db). Required to spawn the imsg subprocess; omitting it leaves the comm off so tests don't accidentally hit a real chat.db."}
+                                                   :description "Absolute path to Messages chat.db (typically /Users/<you>/Library/Messages/chat.db). Required to spawn the imsg subprocess; omitting it leaves the comm off so tests don't accidentally hit a real chat.db. The inbound watch is database-wide, not per-conversation: every host pointed at this db (directly or through an :imessage/command tunnel) sees the same messages, so give all but one of them :imessage/inbound? false."}
                             :imessage/bin         {:type        :string
                                                    :description "Path to the imsg binary (e.g. /usr/local/bin/imsg). Defaults to whatever is on PATH; set explicitly when the running shell PATH doesn't include /usr/local/bin (common for headless processes). Ignored when :imessage/command is set."}
                             :imessage/command     {:type        :seq
@@ -17,6 +17,8 @@
                                                    :description "Chunk reply text into separate sends above this character count. Defaults to 2000."}
                             :imessage/max-chunks  {:type        :int
                                                    :description "Hard cap on chunks a single reply produces. Above the cap the tail is dropped with a notice. Defaults to 3 — long replies become 3 messages, not 50."}
+                            :imessage/inbound?    {:type        :boolean
+                                                   :description "Set false for a send-only comm: Isaac never calls watch.subscribe, so this host neither watches nor answers the chat.db it points at. Omit it (or set true) for the normal bidirectional comm. Required when two hosts share one chat.db — the watch is db-wide, so both would otherwise dispatch a turn for the same inbound message and reply twice. This is the inbound switch; :imessage/allow-from is the sender whitelist, not a way to turn inbound off."}
                             :imessage/allow-from  {:type        :seq
                                                    :spec        {:type :string}
                                                    :description "Inbound allowlist of iMessage handles (phone numbers or emails). nil/missing = no filter; empty list = fail-closed (drops everything)."}}

@@ -35,6 +35,24 @@
 (defn- fake-imsg-client []
   (->FakeImsgClient (atom []) (atom nil)))
 
+;; The server-start scenarios need the comm the *server* builds to talk to the
+;; scenario's FakeImsgClient, so imsg-client/start! is stubbed for the duration
+;; of the scenario (the same seam the unit specs redef). :opts records that the
+;; spawn really happened, so "the watch was not subscribed" cannot pass just
+;; because no client was ever spawned.
+(defonce ^:private real-imsg-start! imsg-client/start!)
+(defonce ^:private imsg-spawn* (atom nil))
+
+(defn- stub-imsg-spawn! [client]
+  (reset! imsg-spawn* nil)
+  (alter-var-root #'imsg-client/start!
+                  (constantly (fn [opts] (reset! imsg-spawn* opts) client))))
+
+(g/after-scenario
+  (fn []
+    (alter-var-root #'imsg-client/start! (constantly real-imsg-start!))
+    (reset! imsg-spawn* nil)))
+
 (defn- feature-fs []
   (or (g/get :mem-fs) (nexus/get :fs) (fs/real-fs)))
 
@@ -202,9 +220,56 @@
                         (fn [m] (merge {:isaac.comm.imessage coord} m))))
     (persist-imessage-module! coord)))
 
+(defn- feature-comm-slice []
+  ;; db-path + command together are what make the comm spawn a client at all
+  ;; (a wrapped command skips the local-file check); the stubbed spawn hands
+  ;; back the scenario's fake instead of a real imsg subprocess.
+  (cond-> {:type             :imessage
+           :imessage/db-path "/tmp/isaac-imessage-feature-chat.db"
+           :imessage/command ["imsg-feature-stub"]}
+          (some? (g/get :imessage-inbound?))
+          (assoc :imessage/inbound? (g/get :imessage-inbound?))))
+
+(defn- seed-imessage-server-config! [client]
+  (stub-imsg-spawn! client)
+  ;; Boot is the observation window for the watch: drop the calls the
+  ;; Background's own on-load made.
+  (reset! (:calls client) [])
+  (g/update! :server-config
+             (fn [cfg]
+               (-> (or cfg {})
+                   (update :modules #(merge {:isaac.comm.imessage {:local/root (System/getProperty "user.dir")}} %))
+                   (update-in [:comms :imessage] #(merge (feature-comm-slice) %))))))
+
 (defn imessage-isaac-http-started []
+  ;; Scenarios that run on the 'default iMessage setup' background carry a
+  ;; FakeImsgClient; give the server-built comm that client and a comm slice
+  ;; to activate. Lifecycle scenarios bring their own config and no fake.
+  (when-let [client (g/get :imessage-fake-client)]
+    (seed-imessage-server-config! client))
   ;; Lazy: server-steps only exists on the :features classpath.
   ((requiring-resolve 'isaac.http.server-steps/server-running)))
+
+(defn- live-imessage-comm []
+  (nexus/get-in [:comms :imessage]))
+
+(defn- watch-subscribe-calls []
+  (->> @(:calls (g/get :imessage-fake-client))
+       (filterv #(= "watch.subscribe" (:method %)))))
+
+(defn- await-comm-spawned! []
+  (helper/await-condition #(and (some? (live-imessage-comm)) (some? @imsg-spawn*)) 6000)
+  (g/should-not-be-nil (live-imessage-comm))
+  (g/should-not-be-nil @imsg-spawn*))
+
+(defn imessage-watch-was-subscribed []
+  (await-comm-spawned!)
+  (helper/await-condition #(seq (watch-subscribe-calls)) 5000)
+  (g/should= 1 (count (watch-subscribe-calls))))
+
+(defn imessage-watch-was-not-subscribed []
+  (await-comm-spawned!)
+  (g/should= [] (watch-subscribe-calls)))
 
 (defn comm-registered-for-delivery [name]
   (helper/await-condition #(some? (comm-registry/comm-for name)) 5000)
@@ -251,13 +316,23 @@
                    vec)]
     (update-imessage-slice! #(assoc % :imessage/allow-from parts))))
 
+(defn imessage-inbound-flag-is [value]
+  (let [flag (= "true" (str/trim (or value "")))]
+    ;; Remembered for a later server start, and applied to the comm the
+    ;; Background already loaded so inbox/delivery steps see it too.
+    (g/assoc! :imessage-inbound? flag)
+    (update-imessage-slice! #(assoc % :imessage/inbound? flag))))
+
 (defn no-polled-work-items []
   (g/should= [] (vec (g/get :imessage-work-items))))
 
 (defn polled-work-items-are [table]
   (let [items  (vec (g/get :imessage-work-items))
         result (match/match-entries table items)]
-    (g/should= [] (:failures result))))
+    (g/should= [] (:failures result))
+    ;; One row per work item, so a table with no rows asserts "nothing was
+    ;; polled" instead of passing vacuously.
+    (g/should= (count (:rows table)) (count items))))
 
 (defn runner-was-invoked-with [table]
   (let [fake-client (g/get :imessage-fake-client)
@@ -344,6 +419,20 @@
   "Updates the registered imessage comm's slice with :allow-from
    parsed from a comma-separated string. Empty value parses to []
    (fail-closed).")
+
+(defgiven "comms.imessage.inbound? is {value:string}" isaac.comm.imessage.imessage-steps/imessage-inbound-flag-is
+  "Sets :imessage/inbound? on the registered imessage comm's slice, and on
+   the comm config a later 'imessage Isaac server is started' activates.
+   \"false\" declares the comm send-only.")
+
+(defthen "the imessage watch was subscribed" isaac.comm.imessage.imessage-steps/imessage-watch-was-subscribed
+  "Asserts the activated comm spawned an imsg client and called
+   watch.subscribe on it exactly once.")
+
+(defthen "the imessage watch was not subscribed" isaac.comm.imessage.imessage-steps/imessage-watch-was-not-subscribed
+  "Asserts the activated comm spawned an imsg client but never called
+   watch.subscribe — the send-only path. Fails if no client was spawned,
+   so it cannot pass by the comm never starting.")
 
 (defthen "there are no polled work items" isaac.comm.imessage.imessage-steps/no-polled-work-items
   "Asserts the captured :work-items collection is empty.")

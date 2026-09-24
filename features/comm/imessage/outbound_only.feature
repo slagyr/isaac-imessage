@@ -1,4 +1,3 @@
-@wip
 Feature: a send-only iMessage comm (isaac-k00m)
   subscribe-to-inbound! is called unconditionally from on-load, so any host
   that configures an iMessage comm watches the chat.db it points at. There is
