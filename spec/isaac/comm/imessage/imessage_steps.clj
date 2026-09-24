@@ -195,7 +195,14 @@
         fs*   (or (g/get :mem-fs) (nexus/get :fs) (fs/real-fs))
         cfg   {:hot-reload true
                :modules    {:isaac.comm.imessage coord}
-               :defaults   {:crew "main" :model "grover"}
+               ;; :defaults is entity templates (isaac-ruom). The default crew
+               ;; id lives at :defaults :frequencies :crew and the default model
+               ;; alias at :defaults :crew :model; the flat :defaults :crew /
+               ;; :defaults :model keys are retired and now fail validation,
+               ;; which would sink the whole config — and with it the comms
+               ;; slice this fixture exists to exercise.
+               :defaults   {:frequencies {:crew "main"}
+                            :crew        {:model "grover"}}
                :models     {:grover {:model "echo" :provider :grover :context-window 32768}}
                :providers  {:grover {}}
                :crew       {:main {:model :grover :soul "You are Atticus."}}}]
