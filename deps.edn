@@ -53,6 +53,7 @@
                        "spec/isaac/comm/imessage_spec.clj"
                        "spec/isaac/comm/imessage_integration_spec.clj"
                        "spec/isaac/comm/imessage/imsg_client_spec.clj"
+                       "spec/isaac/comm/imessage/handbook_chapter_spec.clj"
                        "spec/isaac/comm/imessage_lifecycle_feature_spec.clj"
                        "spec/isaac/server/imessage_app_spec.clj"]}
 
