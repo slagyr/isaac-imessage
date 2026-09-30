@@ -1,15 +1,3 @@
-<!--
-Lint convention (isaac.comm.imessage.handbook-chapter-spec, isaac-6nfg,
-following isaac.foundation's own): a backtick `config:<dotted.path>`
-reference (no angle-bracket placeholder inside the path) is checked against
-the composed config schema, and the word right after `isaac ` in
-`isaac <command>` is checked against the registered top-level CLI commands.
-Keep both literal and real when you write one — the lint fails the build
-once either drifts from what Isaac actually exposes. `<placeholder>` shapes
-(e.g. `config:<dotted.path>` itself, or `<module-id>#<slug>`) are
-intentionally skipped.
--->
-
 # isaac.comm.imessage — iMessage (macOS)
 
 You are a crew running inside Isaac. This chapter covers what
