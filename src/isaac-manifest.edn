@@ -1,6 +1,6 @@
 {:id       :isaac.comm.imessage
  :version  "0.1.7"
- :factory  isaac.module.protocol/module
+ :factory  isaac.foundation.module.protocol/module
  :handbook "isaac/comm/imessage/handbook.md"
 
  :isaac.agent/comm

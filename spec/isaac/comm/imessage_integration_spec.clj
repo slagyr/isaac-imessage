@@ -2,8 +2,8 @@
   (:require
     [isaac.comm.imessage :as sut]
     [isaac.comm.imessage.imsg-client :as imsg-client]
-    [isaac.comm.protocol :as comm]
-    [isaac.reconfigurable :as reconfigurable]
+    [isaac.agent.comm.protocol :as comm]
+    [isaac.foundation.reconfigurable :as reconfigurable]
     [speclj.core :refer :all]))
 
 (defn- fake-client+calls []

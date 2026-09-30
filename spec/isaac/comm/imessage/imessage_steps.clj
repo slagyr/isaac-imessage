@@ -3,21 +3,21 @@
     [clojure.edn :as edn]
     [clojure.string :as str]
     [gherclj.core :as g :refer [defgiven defwhen defthen helper!]]
-    [isaac.comm.delivery.worker :as worker]
+    [isaac.agent.comm.delivery.worker :as worker]
     [isaac.comm.imessage :as imessage]
     [isaac.comm.imessage.imsg-client :as imsg-client]
-    [isaac.comm.registry :as comm-registry]
-    [isaac.config.api :as config]
-    [isaac.config.loader :as loader]
+    [isaac.agent.comm.registry :as comm-registry]
+    [isaac.foundation.config.api :as config]
+    [isaac.foundation.config.loader :as loader]
     [isaac.foundation.root-steps :as root-steps]
-    [isaac.fs :as fs]
-    [isaac.spec-helper :as helper]
-    [isaac.llm.api.grover :as grover]
-    [isaac.reconfigurable :as reconfigurable]
-    [isaac.session.store.memory :as memory-store]
-    [isaac.session.store.spi :as session-store]
-    [isaac.step-tables :as match]
-    [isaac.nexus :as nexus]))
+    [isaac.foundation.fs :as fs]
+    [isaac.foundation.spec-helper :as helper]
+    [isaac.agent.llm.api.grover :as grover]
+    [isaac.foundation.reconfigurable :as reconfigurable]
+    [isaac.agent.session.store.memory :as memory-store]
+    [isaac.agent.session.store.spi :as session-store]
+    [isaac.http.step-tables :as match]
+    [isaac.foundation.nexus :as nexus]))
 
 (helper! isaac.comm.imessage.imessage-steps)
 

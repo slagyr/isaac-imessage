@@ -2,10 +2,10 @@
   (:require
     [isaac.comm.imessage :as imessage]
     [isaac.comm.imessage.imessage-steps :as steps]
-    [isaac.comm.registry :as comm-registry]
-    [isaac.configurator-steps :as cfg-steps]
-    [isaac.nexus :as nexus]
-    [isaac.spec-helper :as helper]
+    [isaac.agent.comm.registry :as comm-registry]
+    [isaac.http.configurator-steps :as cfg-steps]
+    [isaac.foundation.nexus :as nexus]
+    [isaac.foundation.spec-helper :as helper]
     [speclj.core :refer :all]))
 
 (helper/with-captured-logs)

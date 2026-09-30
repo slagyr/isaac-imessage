@@ -2,17 +2,17 @@
   (:require
     [cheshire.core :as json]
     [clojure.string :as str]
-    [isaac.api :as api]
-    [isaac.charge :as charge]
-    [isaac.comm.delivery.queue :as queue]
-    [isaac.comm.factory :as factory]
+    [isaac.agent.api :as api]
+    [isaac.agent.charge :as charge]
+    [isaac.agent.comm.delivery.queue :as queue]
+    [isaac.agent.comm.factory :as factory]
     [isaac.comm.imessage.imsg-client :as imsg-client]
-    [isaac.comm.protocol :as comm]
-    [isaac.config.root :as root]
-    [isaac.logger :as log]
-    [isaac.reconfigurable :as reconfigurable]
-    [isaac.nexus :as nexus]
-    [isaac.scheduler.runtime :as scheduler]))
+    [isaac.agent.comm.protocol :as comm]
+    [isaac.foundation.config.root :as root]
+    [isaac.foundation.logger :as log]
+    [isaac.foundation.reconfigurable :as reconfigurable]
+    [isaac.foundation.nexus :as nexus]
+    [isaac.foundation.scheduler.runtime :as scheduler]))
 
 ;; ===========================================================================
 ;; Outbound — translate a delivery record into an imsg `send` request and

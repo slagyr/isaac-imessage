@@ -3,13 +3,13 @@
     [clojure.edn :as edn]
     [clojure.java.io :as io]
     [clojure.string :as str]
-    [isaac.api]
-    [isaac.comm.delivery.queue :as queue]
+    [isaac.agent.api]
+    [isaac.agent.comm.delivery.queue :as queue]
     [isaac.comm.imessage :as sut]
     [isaac.comm.imessage.imsg-client :as imsg-client]
-    [isaac.comm.protocol :as comm]
-    [isaac.logger :as log]
-    [isaac.reconfigurable :as reconfigurable]
+    [isaac.agent.comm.protocol :as comm]
+    [isaac.foundation.logger :as log]
+    [isaac.foundation.reconfigurable :as reconfigurable]
     [speclj.core :refer :all]))
 
 (defn- fake-client [calls]

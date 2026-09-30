@@ -22,7 +22,7 @@ CLI — Isaac talks JSON-RPC over a long-lived stdio subprocess.
 - `isaac.comm.imessage.imsg-client` — JSON-RPC client. Spawns
   `imsg rpc` once at comm startup, sends requests, correlates
   responses by id, routes pushed notifications to a callback.
-  Reuses message construction from `isaac.util.jsonrpc`.
+  Reuses message construction from `isaac.agent.util.jsonrpc`.
 
 ### Inbound
 

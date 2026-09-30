@@ -3,7 +3,7 @@
     [cheshire.core :as json]
     [clojure.string :as str]
     [isaac.comm.imessage.imsg-client :as sut]
-    [isaac.util.jsonrpc :as jrpc]
+    [isaac.agent.util.jsonrpc :as jrpc]
     [speclj.core :refer :all])
   (:import
     (java.io ByteArrayOutputStream PipedInputStream PipedOutputStream

@@ -1,19 +1,19 @@
-(ns isaac.http.imessage-app-spec
+(ns isaac.comm.imessage.http-app-spec
   (:require
     [clojure.edn :as edn]
     [clojure.java.io :as io]
     [isaac.comm.imessage :as imessage]
     [isaac.comm.imessage.imsg-client :as imsg-client]
-    [isaac.comm.registry :as comm-registry]
-    [isaac.component.registry :as component-registry]
-    [isaac.component.runtime :as component-runtime]
-    [isaac.config.change-source :as change-source]
-    [isaac.fs :as fs]
+    [isaac.agent.comm.registry :as comm-registry]
+    [isaac.foundation.component.registry :as component-registry]
+    [isaac.foundation.component.runtime :as component-runtime]
+    [isaac.foundation.config.change-source :as change-source]
+    [isaac.foundation.fs :as fs]
     [isaac.http.app :as sut]
-    [isaac.logger :as log]
-    [isaac.module.loader :as module-loader]
-    [isaac.nexus :as nexus]
-    [isaac.spec-helper :as helper]
+    [isaac.foundation.logger :as log]
+    [isaac.foundation.module.loader :as module-loader]
+    [isaac.foundation.nexus :as nexus]
+    [isaac.foundation.spec-helper :as helper]
     [speclj.core :refer :all]))
 
 (defn- imessage-module-index []

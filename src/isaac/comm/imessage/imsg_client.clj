@@ -6,11 +6,11 @@
    imsg's watch.subscribe) are dispatched to an :on-notification callback.
 
    Generic JSON-RPC message construction and predicates come from
-   isaac.util.jsonrpc."
+   isaac.agent.util.jsonrpc."
   (:require
     [babashka.process :as process]
-    [isaac.logger :as log]
-    [isaac.util.jsonrpc :as jrpc])
+    [isaac.foundation.logger :as log]
+    [isaac.agent.util.jsonrpc :as jrpc])
   (:import
     (java.io BufferedReader InputStreamReader OutputStreamWriter Writer)
     (java.nio.charset StandardCharsets)))
