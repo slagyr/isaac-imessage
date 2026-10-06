@@ -348,3 +348,7 @@ mechanics this comm's failures feed into.
   scheduler's own exhaustion signal) — that's a genuine "needs a human"
   state, not something a config change fixes; the underlying `imsg`/Mac
   problem has to be resolved and the comm slot reloaded.
+
+Inbound messages record `"imessage:<chat-guid>"` in the session's `:comms`
+set. Successful `send!` returns `:target` with the resolved chat GUID so the
+delivery worker can record another crew's send in that conversation.

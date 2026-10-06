@@ -235,7 +235,7 @@
                    (-notify! [_ _ _] nil)
                    (-stop! [_] nil)
                    (-alive?-client [_] true))]
-      (should= {:ok true :channel "T1"}
+      (should= {:ok true :target "T1"}
                (sut/send! client {:content "hi" :imessage/target "+15551234567"}))))
 
   (it "omits :service when the record has none"
@@ -349,7 +349,7 @@
 
 (describe "iMessage session channel ownership"
   (it "records the inbound chat GUID on an existing session before dispatch"
-    (let [session (atom {:id "imessage:T1" :channels #{}})]
+    (let [session (atom {:id "imessage:T1" :comms #{}})]
       (with-redefs [isaac.agent.api/get-session (fn [_ _] @session)
                     session-store/create (fn [_] ::store)
                     session-store/update-session! (fn [_ _ updates] (swap! session merge updates))
@@ -357,7 +357,7 @@
                     isaac.agent.api/dispatch! (fn [_] {:ok true})]
         (sut/dispatch-work-item! "root" {:session-key "imessage:T1"
                                          :origin {:chat-guid "T1"} :input "ping"})
-        (should= #{"imessage:T1"} (:channels @session))))))
+        (should= #{"imessage:T1"} (:comms @session))))))
 
 (describe "iMessage dispatch-input"
 

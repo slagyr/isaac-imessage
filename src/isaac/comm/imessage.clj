@@ -90,7 +90,7 @@
       (= ::timeout result) {:ok false :transient? true :error :timeout}
       (instance? Throwable result) (classify-imsg-error result)
       :else (cond-> {:ok true}
-              (seq (:chat_guid result)) (assoc :channel (:chat_guid result))))))
+              (seq (:chat_guid result)) (assoc :target (:chat_guid result))))))
 
 ;; ===========================================================================
 ;; Inbound — `imsg watch.subscribe` pushes JSON-RPC notifications. The
@@ -189,17 +189,16 @@
       (api/create-session! state-dir
                            (:session-key work-item)
                            {:origin   (:origin work-item)
-                            :chatType "direct"
-                            :channel  "imessage"})))
+                            :chatType "direct"})))
 
 (defn dispatch-work-item!
   ([state-dir work-item] (dispatch-work-item! state-dir work-item nil))
   ([state-dir work-item comm-impl]
    (let [session (ensure-session! state-dir work-item)
-         channel (str "imessage:" (get-in work-item [:origin :chat-guid]))]
-     (when-not (contains? (:channels session) channel)
+         target (str "imessage:" (get-in work-item [:origin :chat-guid]))]
+     (when-not (contains? (:comms session) target)
        (session-store/update-session! (session-store/create state-dir) (:id session)
-                                      {:channels (conj (set (:channels session)) channel)})))
+                                      {:comms (conj (set (:comms session)) target)})))
    (api/dispatch! (charge/build (cond-> (assoc (dispatch-input work-item) :state-dir state-dir)
                                   comm-impl (assoc :comm comm-impl))))))
 
