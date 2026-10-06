@@ -8,6 +8,7 @@
     [isaac.agent.comm.factory :as factory]
     [isaac.comm.imessage.imsg-client :as imsg-client]
     [isaac.agent.comm.protocol :as comm]
+    [isaac.agent.session.store.spi :as session-store]
     [isaac.foundation.config.root :as root]
     [isaac.foundation.logger :as log]
     [isaac.foundation.reconfigurable :as reconfigurable]
@@ -88,7 +89,8 @@
     (cond
       (= ::timeout result) {:ok false :transient? true :error :timeout}
       (instance? Throwable result) (classify-imsg-error result)
-      :else {:ok true})))
+      :else (cond-> {:ok true}
+              (seq (:chat_guid result)) (assoc :channel (:chat_guid result))))))
 
 ;; ===========================================================================
 ;; Inbound — `imsg watch.subscribe` pushes JSON-RPC notifications. The
@@ -193,7 +195,11 @@
 (defn dispatch-work-item!
   ([state-dir work-item] (dispatch-work-item! state-dir work-item nil))
   ([state-dir work-item comm-impl]
-   (ensure-session! state-dir work-item)
+   (let [session (ensure-session! state-dir work-item)
+         channel (str "imessage:" (get-in work-item [:origin :chat-guid]))]
+     (when-not (contains? (:channels session) channel)
+       (session-store/update-session! (session-store/create state-dir) (:id session)
+                                      {:channels (conj (set (:channels session)) channel)})))
    (api/dispatch! (charge/build (cond-> (assoc (dispatch-input work-item) :state-dir state-dir)
                                   comm-impl (assoc :comm comm-impl))))))
 
@@ -265,6 +271,7 @@
          records (mapv (fn [chunk]
                          (queue/enqueue! {:comm              "imessage"
                                           :imessage/target   handle
+                                          :session           (:id (api/get-session state-dir (:session-key work-item)))
                                           :content           chunk}))
                        chunks)]
      {:dispatch-result result :records records})))

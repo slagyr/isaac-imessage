@@ -26,7 +26,6 @@ Feature: A delivery into an iMessage chat lands in that chat's session (isaac-9k
     And the imessage inbox is polled and dispatched
     And the imessage delivery worker ticks
 
-  @wip
   Scenario: another crew's ping into a talked-in chat lands in that chat's session as a marked note
     Given the isaac EDN file comm/delivery/pending/b1rd.edn exists with:
       | path            | value                        |

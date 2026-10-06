@@ -4,6 +4,7 @@
     [clojure.java.io :as io]
     [clojure.string :as str]
     [isaac.agent.api]
+    [isaac.agent.session.store.spi :as session-store]
     [isaac.agent.comm.delivery.queue :as queue]
     [isaac.comm.imessage :as sut]
     [isaac.comm.imessage.imsg-client :as imsg-client]
@@ -154,16 +155,18 @@
     (let [captured (atom [])]
       (with-redefs [sut/dispatch-work-item! (fn [_ _ _]
                                               {:response {:message {:content "hello back"}}})
+                    isaac.agent.api/get-session (fn [_ _] {:id "imessage-t1"})
                     queue/enqueue!           (fn [record]
                                                (swap! captured conj record)
                                                record)]
         (sut/dispatch-and-enqueue-reply!
           "/test"
-          {:origin {:handle "+15551234567"}}
+          {:session-key "imessage:T1" :origin {:handle "+15551234567"}}
           nil))
       (should= 1 (count @captured))
-      (should= {:comm "imessage" :imessage/target "+15551234567" :content "hello back"}
-               (select-keys (first @captured) [:comm :imessage/target :content])))))
+      (should= {:comm "imessage" :imessage/target "+15551234567" :content "hello back"
+                :session "imessage-t1"}
+               (select-keys (first @captured) [:comm :imessage/target :content :session])))))
 
 (describe "iMessage outbound translation"
 
@@ -225,6 +228,15 @@
       (should= [{:method "send"
                  :params {:to "+15551234567" :text "hello" :service "imessage"}}]
                @calls)))
+
+  (it "reports the chat GUID returned by imsg after sending to a handle"
+    (let [client (reify imsg-client/Client
+                   (-request! [_ _ _] (doto (promise) (deliver {:ok true :chat_guid "T1"})))
+                   (-notify! [_ _ _] nil)
+                   (-stop! [_] nil)
+                   (-alive?-client [_] true))]
+      (should= {:ok true :channel "T1"}
+               (sut/send! client {:content "hi" :imessage/target "+15551234567"}))))
 
   (it "omits :service when the record has none"
     (let [calls (atom [])]
@@ -334,6 +346,18 @@
           schema   (get-in manifest [:isaac.agent/comm :imessage :extra-schema :imessage/inbound?])]
       (should= :boolean (:type schema))
       (should (string? (:description schema))))))
+
+(describe "iMessage session channel ownership"
+  (it "records the inbound chat GUID on an existing session before dispatch"
+    (let [session (atom {:id "imessage:T1" :channels #{}})]
+      (with-redefs [isaac.agent.api/get-session (fn [_ _] @session)
+                    session-store/create (fn [_] ::store)
+                    session-store/update-session! (fn [_ _ updates] (swap! session merge updates))
+                    isaac.agent.charge/build identity
+                    isaac.agent.api/dispatch! (fn [_] {:ok true})]
+        (sut/dispatch-work-item! "root" {:session-key "imessage:T1"
+                                         :origin {:chat-guid "T1"} :input "ping"})
+        (should= #{"imessage:T1"} (:channels @session))))))
 
 (describe "iMessage dispatch-input"
 

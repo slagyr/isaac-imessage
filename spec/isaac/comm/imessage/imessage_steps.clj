@@ -144,7 +144,13 @@
   "Stashes the rows for a later 'is polled' / 'is polled and
    dispatched' step. Each row will become an imsg notification."
   [table]
-  (g/assoc! :imessage-test-rows table))
+  (g/assoc! :imessage-test-rows table)
+  ;; imsg's send RPC resolves the addressed handle to the chat it posted in.
+  ;; Model that RPC response from the source rows, without bypassing send!.
+  (when-let [client (g/get :imessage-fake-client)]
+    (reset! (:send-response client)
+            {:ok true
+             :chat_guid (get (zipmap (:headers table) (first (:rows table))) "chat-guid")})))
 
 (defn imessage-inbox-is-polled []
   (let [table (g/get :imessage-test-rows)
