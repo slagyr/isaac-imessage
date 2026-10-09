@@ -3,7 +3,7 @@ Feature: a send-only iMessage comm (isaac-k00m)
   that configures an iMessage comm watches the chat.db it points at. There is
   no way to declare a comm that only sends.
 
-  That is not hypothetical. yopp's comm reaches zanebot's imsg over SSH, so it
+  That is not hypothetical. one host's comm reaches zanebot's imsg over SSH, so it
   watches the same chat.db zanebot already watches: on 2026-09-24 both hosts
   logged :imsg.watch/subscribed against one database. A single inbound message
   would have dispatched a turn on each and produced two independent replies.
